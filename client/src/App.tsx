@@ -1,41 +1,87 @@
 import { useWebSocket } from './hooks/useWebSocket';
 import { Header } from './components/layout/Header';
+import { ResizeHandle } from './components/layout/ResizablePanel';
 import { CallList } from './components/calls/CallList';
 import { CallDetails } from './components/calls/CallDetails';
 import { TalkgroupFilter } from './components/talkgroups/TalkgroupFilter';
 import { LiveAudioPlayer } from './components/audio/LiveAudioPlayer';
-import { AudioQueue } from './components/audio/AudioQueue';
+import { FloatingAudioPlayer } from './components/audio/FloatingAudioPlayer';
 import { SystemStatus } from './components/status/SystemStatus';
 import { SystemBrowser } from './components/radioreference';
 import { ControlChannelFeed } from './components/control';
 import { SpectrumPanel } from './components/spectrum';
 import { useCallsStore, useAudioStore } from './store';
 import { useFFTStore } from './store/fft';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Routes, Route, useLocation, Link } from 'react-router-dom';
+
+// Helper to load/save panel sizes from localStorage
+function usePanelSize(key: string, defaultSize: number, minSize: number, maxSize: number) {
+  const [size, setSize] = useState(() => {
+    const saved = localStorage.getItem(`panel-size-${key}`);
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (!isNaN(parsed) && parsed >= minSize && parsed <= maxSize) {
+        return parsed;
+      }
+    }
+    return defaultSize;
+  });
+
+  const updateSize = useCallback((delta: number) => {
+    setSize((prev) => {
+      const newSize = Math.min(maxSize, Math.max(minSize, prev + delta));
+      localStorage.setItem(`panel-size-${key}`, newSize.toString());
+      return newSize;
+    });
+  }, [key, minSize, maxSize]);
+
+  return [size, updateSize] as const;
+}
 
 function LiveView() {
   const { selectedCall } = useCallsStore();
   const [isControlPanelCollapsed, setIsControlPanelCollapsed] = useState(false);
-  const controlPanelHeight = 200;
+
+  // Resizable panel sizes
+  const [sidebarWidth, updateSidebarWidth] = usePanelSize('talkgroups-sidebar', 288, 200, 500);
+  const [controlPanelHeight, updateControlPanelHeight] = usePanelSize('control-panel', 200, 100, 500);
+  const [detailsWidth, updateDetailsWidth] = usePanelSize('call-details', 320, 250, 600);
 
   return (
     <div className="flex-1 flex overflow-hidden">
-      {/* Left sidebar - Talkgroup filter */}
-      <aside className="w-72 border-r border-slate-700 flex flex-col bg-slate-900">
+      {/* Left sidebar - Talkgroup filter (resizable) */}
+      <aside
+        className="border-r border-slate-700 flex flex-col bg-slate-900 flex-shrink-0"
+        style={{ width: sidebarWidth }}
+      >
         <TalkgroupFilter />
       </aside>
 
+      {/* Resize handle for left sidebar */}
+      <ResizeHandle
+        direction="horizontal"
+        onDrag={updateSidebarWidth}
+      />
+
       {/* Main content - split view with calls and control channel */}
-      <main className="flex-1 flex flex-col bg-slate-900">
+      <main className="flex-1 flex flex-col bg-slate-900 min-w-0">
         {/* Calls section */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden min-h-0">
           <CallList />
         </div>
 
-        {/* Control Channel Panel - collapsible bottom section */}
+        {/* Resize handle for control panel (only when not collapsed) */}
+        {!isControlPanelCollapsed && (
+          <ResizeHandle
+            direction="vertical"
+            onDrag={(delta) => updateControlPanelHeight(-delta)}
+          />
+        )}
+
+        {/* Control Channel Panel - collapsible and resizable bottom section */}
         <div
-          className="border-t border-slate-700 flex flex-col bg-slate-900"
+          className="border-t border-slate-700 flex flex-col bg-slate-900 flex-shrink-0"
           style={{ height: isControlPanelCollapsed ? 'auto' : controlPanelHeight }}
         >
           {/* Panel header with toggle */}
@@ -51,7 +97,7 @@ function LiveView() {
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live"></span>
             </div>
             <span className="text-xs text-slate-500">
-              {isControlPanelCollapsed ? 'Click to expand' : 'Real-time P25 control channel activity'}
+              {isControlPanelCollapsed ? 'Click to expand' : 'Drag top edge to resize'}
             </span>
           </div>
 
@@ -64,11 +110,22 @@ function LiveView() {
         </div>
       </main>
 
-      {/* Right sidebar - Call details */}
+      {/* Right sidebar - Call details (resizable) */}
       {selectedCall && (
-        <aside className="w-80 border-l border-slate-700 flex flex-col bg-slate-900">
-          <CallDetails />
-        </aside>
+        <>
+          {/* Resize handle for details panel */}
+          <ResizeHandle
+            direction="horizontal"
+            onDrag={(delta) => updateDetailsWidth(-delta)}
+          />
+
+          <aside
+            className="border-l border-slate-700 flex flex-col bg-slate-900 flex-shrink-0"
+            style={{ width: detailsWidth }}
+          >
+            <CallDetails />
+          </aside>
+        </>
       )}
     </div>
   );
@@ -157,8 +214,8 @@ function App() {
         <Route path="/browse/system/:systemId" element={<SystemBrowser />} />
       </Routes>
 
-      {/* Audio queue player (shows when live is enabled) */}
-      <AudioQueue />
+      {/* Floating audio player (shows when live is enabled) */}
+      <FloatingAudioPlayer />
 
       <SystemStatus />
 

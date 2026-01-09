@@ -69,6 +69,16 @@ async function main() {
     clients: 0,
   }));
 
+  // SPA fallback - serve index.html for all non-API routes (client-side routing)
+  app.setNotFoundHandler(async (request, reply) => {
+    // Don't serve index.html for API routes or WebSocket
+    if (request.url.startsWith('/api/') || request.url.startsWith('/ws')) {
+      return reply.code(404).send({ error: 'Not found' });
+    }
+    // Serve index.html for client-side routes
+    return reply.sendFile('index.html');
+  });
+
   // SDR configuration endpoint (for in-band calculation)
   app.get('/api/sdr', async () => {
     const halfBandwidth = config.sdr.sampleRate / 2;

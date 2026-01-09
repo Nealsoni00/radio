@@ -180,6 +180,57 @@ If tests fail:
 
 See `TESTING.md` for the full testing plan.
 
+## Commit Progress Regularly
+
+**Commit changes frequently to enable recovery if something breaks.**
+
+### When to Commit
+
+- After completing each logical unit of work (a feature, a bug fix, a refactor)
+- Before starting a risky or experimental change
+- After successfully passing `just build` and basic verification
+- When switching between different tasks or features
+
+### Commit Workflow
+
+1. Verify changes work:
+   ```bash
+   just build
+   ```
+
+2. Stage and commit with a descriptive message:
+   ```bash
+   just commit "Add resizable panels to LiveView"
+   ```
+
+3. For significant features, push to remote:
+   ```bash
+   git push
+   ```
+
+### Commit Message Guidelines
+
+- Use imperative mood: "Add feature" not "Added feature"
+- Be specific: "Fix volume slider causing audio reload" not "Fix bug"
+- Reference the component/area: "WaveformPlayer: Add keyboard shortcuts"
+
+### Recovery Benefits
+
+Frequent commits allow:
+- Rolling back broken changes with `git checkout -- <file>` or `git reset`
+- Comparing working vs broken code with `git diff`
+- Identifying when bugs were introduced with `git bisect`
+- Restoring lost work after accidental deletions
+
+### Checkpoint Commits
+
+Before major refactors or risky changes, create a checkpoint:
+```bash
+just commit "checkpoint: before refactoring audio system"
+```
+
+This provides a safe point to return to if the refactor goes wrong.
+
 ## Traffic Rules
 
 **NEVER create a "demo" mode, mock data, simulated traffic, or fake radio calls.**
