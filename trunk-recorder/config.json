@@ -37,5 +37,15 @@
   "callTimeout": 3,
   "logLevel": "info",
   "statusServer": "ws://127.0.0.1:3001",
-  "audioStreaming": false
+  "audioStreaming": false,
+  "plugins": [
+    {
+      "library": "libfftstream.so",
+      "name": "FFT Stream",
+      "enabled": true,
+      "address": "127.0.0.1",
+      "port": 9001,
+      "updateRate": 30
+    }
+  ]
 }

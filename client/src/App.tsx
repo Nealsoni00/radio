@@ -8,7 +8,9 @@ import { AudioQueue } from './components/audio/AudioQueue';
 import { SystemStatus } from './components/status/SystemStatus';
 import { SystemBrowser } from './components/radioreference';
 import { ControlChannelFeed } from './components/control';
+import { SpectrumPanel } from './components/spectrum';
 import { useCallsStore, useAudioStore } from './store';
+import { useFFTStore } from './store/fft';
 import { useEffect, useState } from 'react';
 import { Routes, Route, useLocation, Link } from 'react-router-dom';
 
@@ -65,13 +67,31 @@ function LiveView() {
   );
 }
 
+function SpectrumView() {
+  const { enableFFT } = useWebSocket();
+  const { isEnabled } = useFFTStore();
+
+  // Sync FFT streaming with server
+  useEffect(() => {
+    enableFFT(isEnabled);
+  }, [isEnabled, enableFFT]);
+
+  return (
+    <div className="flex-1 overflow-auto p-4">
+      <SpectrumPanel onEnableChange={(enabled) => enableFFT(enabled)} />
+    </div>
+  );
+}
+
 function App() {
-  const { enableAudio } = useWebSocket();
+  const { enableAudio, enableFFT } = useWebSocket();
   const { isLiveEnabled } = useAudioStore();
+  const { isEnabled: isFFTEnabled } = useFFTStore();
   const location = useLocation();
 
   const isLivePage = location.pathname === '/' || location.pathname === '/live';
   const isBrowsePage = location.pathname.startsWith('/browse');
+  const isSpectrumPage = location.pathname === '/spectrum';
 
   // Sync audio streaming with server
   useEffect(() => {
@@ -97,6 +117,16 @@ function App() {
               Live Scanner
             </Link>
             <Link
+              to="/spectrum"
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                isSpectrumPage
+                  ? 'bg-blue-600 text-white'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              Spectrum
+            </Link>
+            <Link
               to="/browse"
               className={`px-3 py-1 text-sm rounded-md transition-colors ${
                 isBrowsePage
@@ -114,6 +144,7 @@ function App() {
       <Routes>
         <Route path="/" element={<LiveView />} />
         <Route path="/live" element={<LiveView />} />
+        <Route path="/spectrum" element={<SpectrumView />} />
         <Route path="/browse" element={<SystemBrowser />} />
         <Route path="/browse/state/:stateId" element={<SystemBrowser />} />
         <Route path="/browse/state/:stateId/county/:countyId" element={<SystemBrowser />} />

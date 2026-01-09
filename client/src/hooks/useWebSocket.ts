@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useCallsStore, useConnectionStore, useAudioStore, useControlChannelStore } from '../store';
+import { useFFTStore } from '../store/fft';
 import type { ServerMessage, ClientMessage, Call } from '../types';
 
 export function useWebSocket() {
@@ -10,6 +11,7 @@ export function useWebSocket() {
   const { setConnected, setDecodeRate } = useConnectionStore();
   const { setPlaying, setCurrentTalkgroup, addToQueue, streamingTalkgroups, isLiveEnabled } = useAudioStore();
   const { addEvent: addControlChannelEvent } = useControlChannelStore();
+  const { updateFFT: updateFFTData } = useFFTStore();
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -28,10 +30,10 @@ export function useWebSocket() {
     };
 
     ws.onmessage = (event) => {
-      // Handle binary audio data
+      // Handle binary data (audio or FFT)
       if (event.data instanceof Blob) {
         event.data.arrayBuffer().then((buffer) => {
-          handleAudioData(buffer);
+          handleBinaryData(buffer);
         });
         return;
       }
@@ -139,7 +141,7 @@ export function useWebSocket() {
     [addCall, updateCall, setActiveCalls, setDecodeRate, setCurrentTalkgroup, setPlaying, addToQueue, streamingTalkgroups, isLiveEnabled, addControlChannelEvent]
   );
 
-  const handleAudioData = useCallback((buffer: ArrayBuffer) => {
+  const handleBinaryData = useCallback((buffer: ArrayBuffer) => {
     // Parse header length (first 4 bytes, little-endian)
     const view = new DataView(buffer);
     const headerLen = view.getUint32(0, true);
@@ -149,20 +151,35 @@ export function useWebSocket() {
     const headerStr = new TextDecoder().decode(headerBytes);
     const header = JSON.parse(headerStr);
 
-    // Extract PCM data
-    const pcmData = new Int16Array(buffer, 4 + headerLen);
+    if (header.type === 'fft') {
+      // Handle FFT data
+      const magnitudes = new Float32Array(buffer, 4 + headerLen);
+      updateFFTData({
+        sourceIndex: header.sourceIndex,
+        centerFreq: header.centerFreq,
+        sampleRate: header.sampleRate,
+        timestamp: header.timestamp,
+        fftSize: header.fftSize,
+        minFreq: header.minFreq,
+        maxFreq: header.maxFreq,
+        magnitudes,
+      });
+    } else {
+      // Handle audio data
+      const pcmData = new Int16Array(buffer, 4 + headerLen);
 
-    // Dispatch audio event for the audio player to handle
-    window.dispatchEvent(
-      new CustomEvent('audioChunk', {
-        detail: {
-          talkgroupId: header.talkgroupId,
-          pcmData,
-          metadata: header,
-        },
-      })
-    );
-  }, []);
+      // Dispatch audio event for the audio player to handle
+      window.dispatchEvent(
+        new CustomEvent('audioChunk', {
+          detail: {
+            talkgroupId: header.talkgroupId,
+            pcmData,
+            metadata: header,
+          },
+        })
+      );
+    }
+  }, [updateFFTData]);
 
   const subscribe = useCallback((talkgroups: number[]) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -203,6 +220,17 @@ export function useWebSocket() {
     }
   }, []);
 
+  const enableFFT = useCallback((enabled: boolean) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'enableFFT',
+          enabled,
+        } as ClientMessage)
+      );
+    }
+  }, []);
+
   useEffect(() => {
     connect();
 
@@ -219,6 +247,7 @@ export function useWebSocket() {
     unsubscribe,
     subscribeAll,
     enableAudio,
+    enableFFT,
   };
 }
 

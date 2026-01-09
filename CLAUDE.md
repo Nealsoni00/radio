@@ -46,6 +46,12 @@ This project uses `just` as the command runner. Always use `just <command>` inst
 - `just format` - Format code with prettier
 - `just lint` - Run linter
 
+### Unit Testing
+- `just test-unit` - Run all unit tests (server + client)
+- `just test-server` - Run server unit tests only
+- `just test-client` - Run client unit tests only
+- `just test-coverage` - Run unit tests with coverage report
+
 ### Monitoring
 - `just status` - Show port usage and RTL-SDR status
 - `just health` - Query API health endpoint

@@ -253,6 +253,43 @@ clean-audio days="7":
 # Testing
 # -----------------------------------------------------------------------------
 
+# Run unit tests for both server and client
+test-unit:
+    #!/usr/bin/env bash
+    set -e
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Running Unit Tests"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Server tests..."
+    cd server && npm test
+    echo ""
+    echo "Client tests..."
+    cd ../client && npm test
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "All unit tests passed!"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Run server unit tests only
+test-server:
+    cd server && npm test
+
+# Run client unit tests only
+test-client:
+    cd client && npm test
+
+# Run unit tests with coverage
+test-coverage:
+    #!/usr/bin/env bash
+    set -e
+    echo "Server coverage..."
+    cd server && npm run test:coverage
+    echo ""
+    echo "Client coverage..."
+    cd ../client && npm run test:coverage
+
 # Run full test suite (build + server check + API test)
 test: build
     #!/usr/bin/env bash
