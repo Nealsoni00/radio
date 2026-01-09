@@ -1,5 +1,13 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useFFTStore } from '../../store/fft';
+
+interface ChannelMarker {
+  frequency: number;
+  type: 'control' | 'voice';
+  label?: string;
+  talkgroupId?: number;
+  active?: boolean;
+}
 
 interface SpectrumDisplayProps {
   height?: number;
@@ -8,6 +16,7 @@ interface SpectrumDisplayProps {
   gridColor?: string;
   showGrid?: boolean;
   showLabels?: boolean;
+  showChannelMarkers?: boolean;
 }
 
 export function SpectrumDisplay({
@@ -17,12 +26,35 @@ export function SpectrumDisplay({
   gridColor = '#334155',
   showGrid = true,
   showLabels = true,
+  showChannelMarkers = true,
 }: SpectrumDisplayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);
 
   const { currentFFT, minDb, maxDb } = useFFTStore();
+  const [channelMarkers, setChannelMarkers] = useState<ChannelMarker[]>([]);
+
+  // Fetch channel markers periodically
+  useEffect(() => {
+    if (!showChannelMarkers) return;
+
+    const fetchMarkers = async () => {
+      try {
+        const res = await fetch('/api/spectrum/channels');
+        if (res.ok) {
+          const data = await res.json();
+          setChannelMarkers(data.markers || []);
+        }
+      } catch {
+        // Ignore fetch errors
+      }
+    };
+
+    fetchMarkers();
+    const interval = setInterval(fetchMarkers, 1000); // Update every second
+    return () => clearInterval(interval);
+  }, [showChannelMarkers]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -121,7 +153,45 @@ export function SpectrumDisplay({
     ctx.fillStyle = gradient;
     ctx.fill();
     ctx.globalAlpha = 1;
-  }, [currentFFT, minDb, maxDb, backgroundColor, lineColor, gridColor, showGrid, showLabels]);
+
+    // Draw channel markers
+    if (showChannelMarkers && channelMarkers.length > 0) {
+      const freqRange = maxFreq - minFreq;
+
+      for (const marker of channelMarkers) {
+        // Check if marker frequency is in range
+        if (marker.frequency < minFreq || marker.frequency > maxFreq) continue;
+
+        const x = ((marker.frequency - minFreq) / freqRange) * width;
+
+        // Draw vertical line
+        ctx.beginPath();
+        ctx.strokeStyle = marker.type === 'control' ? '#ef4444' : '#22c55e'; // Red for control, green for voice
+        ctx.lineWidth = marker.active ? 2 : 1;
+        ctx.setLineDash(marker.type === 'control' ? [] : [4, 4]); // Dashed for voice channels
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, displayHeight);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw label background
+        const label = marker.label || (marker.type === 'control' ? 'CC' : 'Voice');
+        ctx.font = '10px monospace';
+        const textWidth = ctx.measureText(label).width;
+        const padding = 4;
+        const labelHeight = 14;
+        const labelY = marker.type === 'control' ? 5 : 20; // Stagger labels
+
+        ctx.fillStyle = marker.type === 'control' ? 'rgba(239, 68, 68, 0.9)' : 'rgba(34, 197, 94, 0.9)';
+        ctx.fillRect(x - textWidth / 2 - padding, labelY, textWidth + padding * 2, labelHeight);
+
+        // Draw label text
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, x, labelY + 10);
+      }
+    }
+  }, [currentFFT, minDb, maxDb, backgroundColor, lineColor, gridColor, showGrid, showLabels, showChannelMarkers, channelMarkers]);
 
   // Animation loop
   useEffect(() => {

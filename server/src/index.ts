@@ -22,6 +22,7 @@ import { spectrumRoutes } from './routes/api/spectrum.js';
 import { FFTRecorder } from './services/spectrum/fft-recorder.js';
 import { FFTReplayer } from './services/spectrum/fft-replayer.js';
 import { frequencyScanner } from './services/spectrum/frequency-scanner.js';
+import { channelTracker } from './services/spectrum/channel-tracker.js';
 import type { TRCallStart, TRCallEnd } from './types/index.js';
 import { detectRTLDevices } from './services/sdr/rtl-detect.js';
 
@@ -162,8 +163,20 @@ async function main() {
   // Initialize broadcast server (WebSocket)
   const broadcastServer = new BroadcastServer(httpServer);
 
+  // Initialize channel tracker with control channels from config
+  channelTracker.setControlChannels(config.sdr.controlChannels);
+  console.log(`Channel tracker initialized with control channels: ${config.sdr.controlChannels.map((f) => (f / 1e6).toFixed(6)).join(', ')} MHz`);
+
   trStatusServer.on('callStart', (call: TRCallStart) => {
     console.log(`Call started: TG ${call.talkgroup} (${call.talkgrouptag})`);
+
+    // Track active call for spectrum markers
+    channelTracker.addActiveCall({
+      id: call.id,
+      frequency: call.freq,
+      talkgroupId: call.talkgroup,
+      alphaTag: call.talkgrouptag,
+    });
 
     broadcastServer.broadcastCallStart({
       id: call.id,
@@ -178,6 +191,9 @@ async function main() {
 
   trStatusServer.on('callEnd', (call: TRCallEnd) => {
     console.log(`Call ended: TG ${call.talkgroup} (${call.talkgrouptag}) - ${call.length}s`);
+
+    // Remove from active calls for spectrum markers
+    channelTracker.removeCall(call.id);
 
     // Save to database
     processCompletedCall(call, call.filename);
@@ -200,6 +216,16 @@ async function main() {
   });
 
   trStatusServer.on('callsActive', (calls: TRCallStart[]) => {
+    // Update channel tracker with full list of active calls
+    channelTracker.updateActiveCalls(
+      calls.map((call) => ({
+        id: call.id,
+        frequency: call.freq,
+        talkgroupId: call.talkgroup,
+        alphaTag: call.talkgrouptag,
+      }))
+    );
+
     broadcastServer.broadcastActiveCalls(
       calls.map((call) => ({
         id: call.id,

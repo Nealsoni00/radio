@@ -30,6 +30,10 @@ export const config = {
   sdr: {
     centerFrequency: parseInt(process.env.SDR_CENTER_FREQ || '770500000', 10),
     sampleRate: parseInt(process.env.SDR_SAMPLE_RATE || '2400000', 10),
+    controlChannels: (process.env.SDR_CONTROL_CHANNELS || '770106250,770356250')
+      .split(',')
+      .map((f) => parseInt(f.trim(), 10))
+      .filter((f) => !isNaN(f)),
   },
 
   radioReference: {

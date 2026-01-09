@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import type { FFTRecorder, RecordingMetadata } from '../../services/spectrum/fft-recorder.js';
 import type { FFTReplayer } from '../../services/spectrum/fft-replayer.js';
 import { frequencyScanner } from '../../services/spectrum/frequency-scanner.js';
+import { channelTracker } from '../../services/spectrum/channel-tracker.js';
 
 interface SpectrumRouteDeps {
   recorder: FFTRecorder;
@@ -60,7 +61,13 @@ export function spectrumRoutes(deps: SpectrumRouteDeps) {
         return reply.code(404).send({ error: 'Recording not found' });
       }
       // Include events if requested (exclude packets to save bandwidth)
-      if (request.query.includeEvents === 'true') {
+      // Check various truthy values since query parsing can vary
+      const includeEvents =
+        request.query.includeEvents === 'true' ||
+        request.query.includeEvents === '1' ||
+        (request.query as Record<string, unknown>).includeEvents === true;
+
+      if (includeEvents) {
         return {
           metadata: recording.metadata,
           controlChannelEvents: recording.controlChannelEvents,
@@ -203,6 +210,31 @@ export function spectrumRoutes(deps: SpectrumRouteDeps) {
         signal,
         coverage,
       };
+    });
+
+    // ===== Channel Markers Endpoints =====
+
+    // Get channel markers for spectrum overlay
+    app.get('/api/spectrum/channels', async () => {
+      return {
+        markers: channelTracker.getChannelMarkers(),
+        controlChannels: channelTracker.getControlChannels(),
+        voiceChannels: channelTracker.getActiveVoiceChannels(),
+      };
+    });
+
+    // Set control channel frequencies (usually called once at startup)
+    app.post<{
+      Body: { frequencies: number[] };
+    }>('/api/spectrum/channels/control', async (request, reply) => {
+      const { frequencies } = request.body;
+
+      if (!frequencies || !Array.isArray(frequencies)) {
+        return reply.code(400).send({ error: 'frequencies array is required' });
+      }
+
+      channelTracker.setControlChannels(frequencies);
+      return { success: true, controlChannels: frequencies };
     });
   };
 }
