@@ -283,3 +283,37 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   setTrunkRecorderConnected: (connected) => set({ trunkRecorderConnected: connected }),
   setDecodeRate: (rate) => set({ decodeRate: rate }),
 }));
+
+import type { ControlChannelEvent } from '../types';
+
+interface ControlChannelState {
+  events: ControlChannelEvent[];
+  isLoading: boolean;
+  maxEvents: number;
+  addEvent: (event: ControlChannelEvent) => void;
+  setEvents: (events: ControlChannelEvent[]) => void;
+  clearEvents: () => void;
+}
+
+export const useControlChannelStore = create<ControlChannelState>((set) => ({
+  events: [],
+  isLoading: false,
+  maxEvents: 200,
+
+  addEvent: (event) => {
+    set((state) => ({
+      events: [event, ...state.events].slice(0, state.maxEvents),
+    }));
+  },
+
+  setEvents: (events) => {
+    set((state) => ({
+      events: events.slice(0, state.maxEvents),
+      isLoading: false,
+    }));
+  },
+
+  clearEvents: () => {
+    set({ events: [] });
+  },
+}));

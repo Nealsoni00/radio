@@ -6,6 +6,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "sync:rr": "tsx src/scripts/sync-radioreference.ts",
     "sync:all": "tsx src/scripts/sync-all-us.ts"
   },
@@ -26,7 +29,9 @@
     "@types/cheerio": "^0.22.35",
     "@types/node": "^20.14.10",
     "@types/ws": "^8.5.12",
+    "@vitest/coverage-v8": "^4.0.16",
     "tsx": "^4.16.2",
-    "typescript": "^5.5.3"
+    "typescript": "^5.5.3",
+    "vitest": "^4.0.16"
   }
 }

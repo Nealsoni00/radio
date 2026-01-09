@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { useCallsStore, useConnectionStore, useAudioStore } from '../store';
+import { useCallsStore, useConnectionStore, useAudioStore, useControlChannelStore } from '../store';
 import type { ServerMessage, ClientMessage, Call } from '../types';
 
 export function useWebSocket() {
@@ -9,6 +9,7 @@ export function useWebSocket() {
   const { addCall, updateCall, setActiveCalls } = useCallsStore();
   const { setConnected, setDecodeRate } = useConnectionStore();
   const { setPlaying, setCurrentTalkgroup, addToQueue, streamingTalkgroups, isLiveEnabled } = useAudioStore();
+  const { addEvent: addControlChannelEvent } = useControlChannelStore();
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -124,12 +125,18 @@ export function useWebSocket() {
           }
           break;
 
+        case 'controlChannel':
+          if (message.event) {
+            addControlChannelEvent(message.event);
+          }
+          break;
+
         case 'error':
           console.error('Server error:', message.error);
           break;
       }
     },
-    [addCall, updateCall, setActiveCalls, setDecodeRate, setCurrentTalkgroup, setPlaying, addToQueue, streamingTalkgroups, isLiveEnabled]
+    [addCall, updateCall, setActiveCalls, setDecodeRate, setCurrentTalkgroup, setPlaying, addToQueue, streamingTalkgroups, isLiveEnabled, addControlChannelEvent]
   );
 
   const handleAudioData = useCallback((buffer: ArrayBuffer) => {

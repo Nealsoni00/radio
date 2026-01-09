@@ -10,6 +10,7 @@ import { config } from './config/index.js';
 import { initializeDatabase, upsertTalkgroup, insertCall, insertCallSources } from './db/index.js';
 import { TrunkRecorderStatusServer } from './services/trunk-recorder/status-server.js';
 import { AudioReceiver } from './services/trunk-recorder/audio-receiver.js';
+import { FFTReceiver } from './services/trunk-recorder/fft-receiver.js';
 import { FileWatcher } from './services/trunk-recorder/file-watcher.js';
 import { LogWatcher } from './services/trunk-recorder/log-watcher.js';
 import { BroadcastServer } from './services/broadcast/websocket.js';
@@ -47,6 +48,9 @@ async function main() {
 
   // Initialize audio receiver
   const audioReceiver = new AudioReceiver(config.trunkRecorder.audioPort);
+
+  // Initialize FFT receiver for spectrum visualization
+  const fftReceiver = new FFTReceiver(config.trunkRecorder.fftPort);
 
   // Initialize file watcher for recordings
   const fileWatcher = new FileWatcher(config.trunkRecorder.audioDir);
@@ -173,6 +177,10 @@ async function main() {
     broadcastServer.broadcastAudio(packet);
   });
 
+  fftReceiver.on('fft', (packet) => {
+    broadcastServer.broadcastFFT(packet);
+  });
+
   fileWatcher.on('call', (call, audioPath) => {
     console.log(`Recording detected: TG ${call.talkgroup} - ${audioPath}`);
 
@@ -226,6 +234,7 @@ async function main() {
 
   // Start services
   audioReceiver.start();
+  fftReceiver.start();
   fileWatcher.start();
   logWatcher.start();
 
@@ -240,6 +249,7 @@ async function main() {
     trStatusServer.close();
     logWatcher.stop();
     audioReceiver.stop();
+    fftReceiver.stop();
     fileWatcher.stop();
     await app.close();
     console.log('Server closed');

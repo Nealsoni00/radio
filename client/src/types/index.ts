@@ -75,9 +75,20 @@ export interface SDRConfig {
 }
 
 export interface ClientMessage {
-  type: 'subscribe' | 'unsubscribe' | 'subscribeAll' | 'enableAudio';
+  type: 'subscribe' | 'unsubscribe' | 'subscribeAll' | 'enableAudio' | 'enableFFT';
   talkgroups?: number[];
   enabled?: boolean;
+}
+
+export interface FFTData {
+  sourceIndex: number;
+  centerFreq: number;
+  sampleRate: number;
+  timestamp: number;
+  fftSize: number;
+  minFreq: number;
+  maxFreq: number;
+  magnitudes: Float32Array;
 }
 
 // RadioReference types

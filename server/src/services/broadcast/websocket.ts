@@ -1,7 +1,7 @@
 import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'http';
 import type { Server } from 'http';
-import type { ClientMessage, ServerMessage, Call, AudioPacket } from '../../types/index.js';
+import type { ClientMessage, ServerMessage, Call, AudioPacket, FFTPacket } from '../../types/index.js';
 import type { ControlChannelEvent } from '../trunk-recorder/log-watcher.js';
 
 interface Client {
@@ -9,6 +9,7 @@ interface Client {
   ws: WebSocket;
   subscribedTalkgroups: Set<number>;
   streamAudio: boolean;
+  streamFFT: boolean;
 }
 
 export class BroadcastServer {
@@ -30,6 +31,7 @@ export class BroadcastServer {
         ws,
         subscribedTalkgroups: new Set(),
         streamAudio: false,
+        streamFFT: false,
       };
 
       this.clients.set(clientId, client);
@@ -84,6 +86,11 @@ export class BroadcastServer {
       case 'enableAudio':
         client.streamAudio = message.enabled ?? false;
         console.log(`Client ${clientId} audio streaming: ${client.streamAudio}`);
+        break;
+
+      case 'enableFFT':
+        client.streamFFT = message.enabled ?? false;
+        console.log(`Client ${clientId} FFT streaming: ${client.streamFFT}`);
         break;
     }
   }
@@ -175,6 +182,35 @@ export class BroadcastServer {
       if (client.ws.readyState !== WebSocket.OPEN) return;
       if (!client.streamAudio) return;
       if (!this.isSubscribed(client, packet.talkgroupId)) return;
+
+      client.ws.send(message);
+    });
+  }
+
+  broadcastFFT(packet: FFTPacket): void {
+    // Build binary message: [4 bytes header length][JSON header][Float32 FFT data]
+    const header = Buffer.from(
+      JSON.stringify({
+        type: 'fft',
+        sourceIndex: packet.sourceIndex,
+        centerFreq: packet.centerFreq,
+        sampleRate: packet.sampleRate,
+        timestamp: packet.timestamp,
+        fftSize: packet.fftSize,
+        minFreq: packet.minFreq,
+        maxFreq: packet.maxFreq,
+      })
+    );
+    const headerLen = Buffer.alloc(4);
+    headerLen.writeUInt32LE(header.length, 0);
+
+    // Convert Float32Array to Buffer
+    const fftBuffer = Buffer.from(packet.magnitudes.buffer);
+    const message = Buffer.concat([headerLen, header, fftBuffer]);
+
+    this.clients.forEach((client) => {
+      if (client.ws.readyState !== WebSocket.OPEN) return;
+      if (!client.streamFFT) return;
 
       client.ws.send(message);
     });

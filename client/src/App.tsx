@@ -7,12 +7,14 @@ import { LiveAudioPlayer } from './components/audio/LiveAudioPlayer';
 import { AudioQueue } from './components/audio/AudioQueue';
 import { SystemStatus } from './components/status/SystemStatus';
 import { SystemBrowser } from './components/radioreference';
+import { ControlChannelFeed } from './components/control';
 import { useCallsStore, useAudioStore } from './store';
-import { useEffect } from 'react';
-import { Routes, Route, useNavigate, useLocation, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Routes, Route, useLocation, Link } from 'react-router-dom';
 
 function LiveView() {
   const { selectedCall } = useCallsStore();
+  const [activeTab, setActiveTab] = useState<'calls' | 'control'>('calls');
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -21,13 +23,40 @@ function LiveView() {
         <TalkgroupFilter />
       </aside>
 
-      {/* Main content - Call list */}
+      {/* Main content */}
       <main className="flex-1 flex flex-col bg-slate-900">
-        <CallList />
+        {/* Tab bar */}
+        <div className="flex border-b border-slate-700 bg-slate-800/50">
+          <button
+            onClick={() => setActiveTab('calls')}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'calls'
+                ? 'text-blue-400 border-b-2 border-blue-400'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Calls
+          </button>
+          <button
+            onClick={() => setActiveTab('control')}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'control'
+                ? 'text-blue-400 border-b-2 border-blue-400'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Control Channel
+          </button>
+        </div>
+
+        {/* Tab content */}
+        <div className="flex-1 overflow-hidden">
+          {activeTab === 'calls' ? <CallList /> : <ControlChannelFeed />}
+        </div>
       </main>
 
       {/* Right sidebar - Call details */}
-      {selectedCall && (
+      {selectedCall && activeTab === 'calls' && (
         <aside className="w-80 border-l border-slate-700 flex flex-col bg-slate-900">
           <CallDetails />
         </aside>

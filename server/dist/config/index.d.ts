@@ -6,6 +6,7 @@ export declare const config: {
     trunkRecorder: {
         statusUrl: string;
         audioPort: number;
+        fftPort: number;
         audioDir: string;
     };
     database: {

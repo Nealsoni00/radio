@@ -80,14 +80,25 @@ export interface AudioPacket {
   };
 }
 
+export interface FFTPacket {
+  sourceIndex: number;
+  centerFreq: number;
+  sampleRate: number;
+  timestamp: number;
+  fftSize: number;
+  minFreq: number;
+  maxFreq: number;
+  magnitudes: Float32Array;
+}
+
 export interface ClientMessage {
-  type: 'subscribe' | 'unsubscribe' | 'subscribeAll' | 'enableAudio';
+  type: 'subscribe' | 'unsubscribe' | 'subscribeAll' | 'enableAudio' | 'enableFFT';
   talkgroups?: number[];
   enabled?: boolean;
 }
 
 export interface ServerMessage {
-  type: 'connected' | 'callStart' | 'callEnd' | 'callsActive' | 'newRecording' | 'rates' | 'error';
+  type: 'connected' | 'callStart' | 'callEnd' | 'callsActive' | 'newRecording' | 'rates' | 'fft' | 'error';
   clientId?: string;
   call?: Partial<Call> & { audioUrl?: string };
   calls?: Partial<Call>[];

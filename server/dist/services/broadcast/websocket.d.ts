@@ -1,5 +1,6 @@
 import type { Server } from 'http';
-import type { Call, AudioPacket } from '../../types/index.js';
+import type { Call, AudioPacket, FFTPacket } from '../../types/index.js';
+import type { ControlChannelEvent } from '../trunk-recorder/log-watcher.js';
 export declare class BroadcastServer {
     private wss;
     private clients;
@@ -18,6 +19,8 @@ export declare class BroadcastServer {
         decoderate: number;
     }>): void;
     broadcastAudio(packet: AudioPacket): void;
+    broadcastFFT(packet: FFTPacket): void;
+    broadcastControlChannel(event: ControlChannelEvent): void;
     getClientCount(): number;
     private generateClientId;
 }

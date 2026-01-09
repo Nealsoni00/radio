@@ -71,6 +71,15 @@ export async function getSDRConfig(): Promise<SDRConfig> {
   return response.json();
 }
 
+import type { ControlChannelEvent } from '../types';
+
+export async function getControlChannelEvents(count?: number): Promise<{ events: ControlChannelEvent[] }> {
+  const url = count ? `${API_BASE}/control-channel?count=${count}` : `${API_BASE}/control-channel`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch control channel events');
+  return response.json();
+}
+
 // RadioReference API functions
 export async function getRRStates(): Promise<{ states: RRState[] }> {
   const response = await fetch(`${API_BASE}/rr/states`);

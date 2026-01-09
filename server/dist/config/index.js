@@ -10,6 +10,7 @@ export const config = {
     trunkRecorder: {
         statusUrl: process.env.TR_STATUS_URL || 'ws://127.0.0.1:3001',
         audioPort: parseInt(process.env.TR_AUDIO_PORT || '9000', 10),
+        fftPort: parseInt(process.env.TR_FFT_PORT || '9001', 10),
         audioDir: process.env.TR_AUDIO_DIR || join(__dirname, '../../../trunk-recorder/audio'),
     },
     database: {

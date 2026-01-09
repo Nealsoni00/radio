@@ -123,6 +123,56 @@ Recommended colors for dark theme:
 - `cursorColor="#ef4444"` (red-500)
 - `backgroundColor="#0f172a"` (slate-950)
 
+## Testing Requirements
+
+**ALWAYS follow the testing plan in `TESTING.md` after making changes.**
+
+### Mandatory Steps After Every Change
+
+1. **Build must pass:**
+   ```bash
+   just build
+   ```
+   Do NOT commit if build fails.
+
+2. **Verify server starts** (for server changes):
+   ```bash
+   just start
+   # Then in another terminal:
+   just health
+   ```
+
+3. **Test affected features** - See TESTING.md for component-specific tests.
+
+### Quick Test Commands
+
+| Change Type | Test Command |
+|-------------|--------------|
+| Any change | `just build` |
+| Server/API | `just build && just start` then `just health` |
+| Database | `just build && just db-stats` |
+| UI Component | `just dev` then check browser |
+| WebSocket | `just dev` then check connection status in UI |
+| Audio | `just dev` then play a recording |
+
+### Before Committing Checklist
+
+- [ ] `just build` passes
+- [ ] Server starts without errors
+- [ ] UI loads without console errors
+- [ ] Affected features work correctly
+- [ ] No regressions in related features
+
+### Test Failure Protocol
+
+If tests fail:
+1. Fix the issue
+2. Re-run `just build`
+3. Verify fix didn't break other features
+4. Only then commit
+
+See `TESTING.md` for the full testing plan.
+
 ## Traffic Rules
 
 **NEVER create a "demo" mode, mock data, simulated traffic, or fake radio calls.**

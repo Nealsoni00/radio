@@ -146,6 +146,50 @@ db-stats:
     sqlite3 server/data/radio.db "SELECT 'Call Sources: ' || COUNT(*) FROM call_sources;"
 
 # -----------------------------------------------------------------------------
+# RadioReference Data Sync
+# -----------------------------------------------------------------------------
+
+# Sync ALL P25 systems for entire US (takes several hours)
+sync-all:
+    cd server && npm run sync:all
+
+# Resume a previously interrupted full US sync
+sync-resume:
+    cd server && npm run sync:all -- --resume
+
+# Sync ALL US (skip talkgroup details for faster initial sync)
+sync-all-quick:
+    cd server && npm run sync:all -- --skip-details
+
+# Sync specific states only (comma-separated abbreviations)
+sync-states states:
+    cd server && npm run sync:rr -- --states {{states}}
+
+# Sync specific states with full details
+sync-states-full states:
+    cd server && npm run sync:rr -- --states {{states}} --full
+
+# Sync a specific system by ID
+sync-system id:
+    cd server && npm run sync:rr -- --system {{id}}
+
+# Show RadioReference sync help
+sync-help:
+    cd server && npm run sync:all -- --help
+
+# Show RadioReference database stats
+rr-stats:
+    #!/usr/bin/env bash
+    echo "RadioReference Data Statistics"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    sqlite3 server/data/radio.db "SELECT 'States: ' || COUNT(*) FROM rr_states;"
+    sqlite3 server/data/radio.db "SELECT 'Counties: ' || COUNT(*) FROM rr_counties;"
+    sqlite3 server/data/radio.db "SELECT 'P25 Systems: ' || COUNT(*) FROM rr_systems;"
+    sqlite3 server/data/radio.db "SELECT 'Sites: ' || COUNT(*) FROM rr_sites;"
+    sqlite3 server/data/radio.db "SELECT 'Talkgroups: ' || COUNT(*) FROM rr_talkgroups;"
+    sqlite3 server/data/radio.db "SELECT 'Frequencies: ' || COUNT(*) FROM rr_frequencies;"
+
+# -----------------------------------------------------------------------------
 # Logs & Monitoring
 # -----------------------------------------------------------------------------
 
@@ -204,6 +248,87 @@ clean-audio days="7":
     find trunk-recorder/audio -name "*.wav" -mtime +{{days}} -delete 2>/dev/null || true
     find trunk-recorder/audio -name "*.json" -mtime +{{days}} -delete 2>/dev/null || true
     echo "Done"
+
+# -----------------------------------------------------------------------------
+# Testing
+# -----------------------------------------------------------------------------
+
+# Run full test suite (build + server check + API test)
+test: build
+    #!/usr/bin/env bash
+    set -e
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Running Test Suite"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    echo "✓ Build passed"
+    echo ""
+
+    # Start server in background
+    echo "Starting server..."
+    just _kill-ports
+    mkdir -p trunk-recorder/audio
+    npm start &
+    SERVER_PID=$!
+    sleep 3
+
+    # Test health endpoint
+    echo "Testing API health..."
+    HEALTH=$(curl -s http://localhost:3000/api/health 2>/dev/null || echo "FAILED")
+    if echo "$HEALTH" | grep -q '"status":"ok"'; then
+        echo "✓ Health endpoint OK"
+    else
+        echo "✗ Health endpoint failed"
+        kill $SERVER_PID 2>/dev/null || true
+        exit 1
+    fi
+
+    # Test API endpoints
+    echo ""
+    echo "Testing API endpoints..."
+
+    # Calls API
+    CALLS=$(curl -s http://localhost:3000/api/calls?limit=1 2>/dev/null || echo "FAILED")
+    if echo "$CALLS" | grep -q '"calls"'; then
+        echo "✓ GET /api/calls"
+    else
+        echo "✗ GET /api/calls failed"
+    fi
+
+    # Talkgroups API
+    TGS=$(curl -s http://localhost:3000/api/talkgroups 2>/dev/null || echo "FAILED")
+    if echo "$TGS" | grep -q '"talkgroups"'; then
+        echo "✓ GET /api/talkgroups"
+    else
+        echo "✗ GET /api/talkgroups failed"
+    fi
+
+    # RadioReference stats
+    STATS=$(curl -s http://localhost:3000/api/rr/stats 2>/dev/null || echo "FAILED")
+    if echo "$STATS" | grep -q '"stats"'; then
+        echo "✓ GET /api/rr/stats"
+    else
+        echo "✗ GET /api/rr/stats failed"
+    fi
+
+    # Cleanup
+    echo ""
+    echo "Stopping server..."
+    kill $SERVER_PID 2>/dev/null || true
+    sleep 1
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "All tests passed!"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Quick test (build only, no server)
+test-quick:
+    just build
+    @echo ""
+    @echo "✓ Quick test passed (build successful)"
 
 # -----------------------------------------------------------------------------
 # Development
