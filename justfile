@@ -367,6 +367,13 @@ test-quick:
     @echo ""
     @echo "✓ Quick test passed (build successful)"
 
+# Run all CI checks locally (same as GitHub Actions)
+ci: build test-unit typecheck
+    @echo ""
+    @echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    @echo "All CI checks passed!"
+    @echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 # -----------------------------------------------------------------------------
 # Development
 # -----------------------------------------------------------------------------

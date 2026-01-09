@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useCallsStore, useTalkgroupsStore, useAudioStore, useConnectionStore, useControlChannelStore } from './index';
-import type { Call, Talkgroup, ControlChannelEvent } from '../types';
+import type { ControlChannelEvent } from '../types';
 
 describe('useCallsStore', () => {
   beforeEach(() => {

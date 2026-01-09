@@ -16,7 +16,8 @@ import { Routes, Route, useLocation, Link } from 'react-router-dom';
 
 function LiveView() {
   const { selectedCall } = useCallsStore();
-  const [activeTab, setActiveTab] = useState<'calls' | 'control'>('calls');
+  const [isControlPanelCollapsed, setIsControlPanelCollapsed] = useState(false);
+  const controlPanelHeight = 200;
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -25,40 +26,46 @@ function LiveView() {
         <TalkgroupFilter />
       </aside>
 
-      {/* Main content */}
+      {/* Main content - split view with calls and control channel */}
       <main className="flex-1 flex flex-col bg-slate-900">
-        {/* Tab bar */}
-        <div className="flex border-b border-slate-700 bg-slate-800/50">
-          <button
-            onClick={() => setActiveTab('calls')}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === 'calls'
-                ? 'text-blue-400 border-b-2 border-blue-400'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Calls
-          </button>
-          <button
-            onClick={() => setActiveTab('control')}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === 'control'
-                ? 'text-blue-400 border-b-2 border-blue-400'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Control Channel
-          </button>
+        {/* Calls section */}
+        <div className="flex-1 overflow-hidden">
+          <CallList />
         </div>
 
-        {/* Tab content */}
-        <div className="flex-1 overflow-hidden">
-          {activeTab === 'calls' ? <CallList /> : <ControlChannelFeed />}
+        {/* Control Channel Panel - collapsible bottom section */}
+        <div
+          className="border-t border-slate-700 flex flex-col bg-slate-900"
+          style={{ height: isControlPanelCollapsed ? 'auto' : controlPanelHeight }}
+        >
+          {/* Panel header with toggle */}
+          <div
+            className="px-3 py-1.5 border-b border-slate-700 bg-slate-800 flex items-center justify-between cursor-pointer select-none"
+            onClick={() => setIsControlPanelCollapsed(!isControlPanelCollapsed)}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">
+                {isControlPanelCollapsed ? '▶' : '▼'}
+              </span>
+              <span className="text-sm font-medium text-slate-300">Control Channel</span>
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live"></span>
+            </div>
+            <span className="text-xs text-slate-500">
+              {isControlPanelCollapsed ? 'Click to expand' : 'Real-time P25 control channel activity'}
+            </span>
+          </div>
+
+          {/* Panel content */}
+          {!isControlPanelCollapsed && (
+            <div className="flex-1 overflow-hidden">
+              <ControlChannelFeed compact />
+            </div>
+          )}
         </div>
       </main>
 
       {/* Right sidebar - Call details */}
-      {selectedCall && activeTab === 'calls' && (
+      {selectedCall && (
         <aside className="w-80 border-l border-slate-700 flex flex-col bg-slate-900">
           <CallDetails />
         </aside>
@@ -84,9 +91,8 @@ function SpectrumView() {
 }
 
 function App() {
-  const { enableAudio, enableFFT } = useWebSocket();
+  const { enableAudio } = useWebSocket();
   const { isLiveEnabled } = useAudioStore();
-  const { isEnabled: isFFTEnabled } = useFFTStore();
   const location = useLocation();
 
   const isLivePage = location.pathname === '/' || location.pathname === '/live';

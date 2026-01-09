@@ -51,6 +51,7 @@ This project uses `just` as the command runner. Always use `just <command>` inst
 - `just test-server` - Run server unit tests only
 - `just test-client` - Run client unit tests only
 - `just test-coverage` - Run unit tests with coverage report
+- `just ci` - Run all CI checks locally (build + tests + typecheck)
 
 ### Monitoring
 - `just status` - Show port usage and RTL-SDR status
