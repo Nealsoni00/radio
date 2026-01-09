@@ -42,7 +42,7 @@ async function main() {
   app.get('/api/health', async () => ({
     status: 'ok',
     timestamp: Date.now(),
-    trunkRecorder: trClient.isConnected(),
+    trunkRecorder: trStatusServer.isConnected(),
     audioReceiver: audioReceiver.isListening(),
     clients: broadcastServer.getClientCount(),
   }));
@@ -53,10 +53,10 @@ async function main() {
   // Initialize broadcast server (WebSocket)
   const broadcastServer = new BroadcastServer(httpServer);
 
-  // Initialize trunk-recorder status client
-  const trClient = new TrunkRecorderClient(config.trunkRecorder.statusUrl);
+  // Initialize trunk-recorder status server (trunk-recorder connects to us)
+  const trStatusServer = new TrunkRecorderStatusServer(3001);
 
-  trClient.on('callStart', (call: TRCallStart) => {
+  trStatusServer.on('callStart', (call: TRCallStart) => {
     console.log(`Call started: TG ${call.talkgroup} (${call.talkgrouptag})`);
 
     broadcastServer.broadcastCallStart({
@@ -70,7 +70,7 @@ async function main() {
     });
   });
 
-  trClient.on('callEnd', (call: TRCallEnd) => {
+  trStatusServer.on('callEnd', (call: TRCallEnd) => {
     console.log(`Call ended: TG ${call.talkgroup} (${call.talkgrouptag}) - ${call.length}s`);
 
     // Upsert talkgroup info
@@ -118,7 +118,7 @@ async function main() {
     });
   });
 
-  trClient.on('callsActive', (calls: TRCallStart[]) => {
+  trStatusServer.on('callsActive', (calls: TRCallStart[]) => {
     broadcastServer.broadcastActiveCalls(
       calls.map((call) => ({
         id: call.id,
@@ -129,7 +129,7 @@ async function main() {
     );
   });
 
-  trClient.on('rates', (rates) => {
+  trStatusServer.on('rates', (rates) => {
     broadcastServer.broadcastRates(rates);
   });
 
@@ -175,7 +175,6 @@ async function main() {
   });
 
   // Start services
-  trClient.connect();
   audioReceiver.start();
   fileWatcher.start();
 
@@ -188,7 +187,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = () => {
     console.log('Shutting down...');
-    trClient.disconnect();
+    trStatusServer.close();
     audioReceiver.stop();
     fileWatcher.stop();
     httpServer.close(() => {

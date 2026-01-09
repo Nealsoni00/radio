@@ -2,7 +2,7 @@
   "ver": 2,
   "sources": [
     {
-      "center": 771500000,
+      "center": 770500000,
       "rate": 2400000,
       "error": 0,
       "gain": 40,
@@ -22,13 +22,11 @@
       "modulation": "qpsk",
       "control_channels": [
         770106250,
-        770356250,
-        772106250,
-        772356250
+        770356250
       ],
       "callLog": true,
       "audioArchive": true,
-      "recordUnknown": false,
+      "recordUnknown": true,
       "minDuration": 1,
       "compressWav": false
     }

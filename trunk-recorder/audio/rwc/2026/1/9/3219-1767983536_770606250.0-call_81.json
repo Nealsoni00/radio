@@ -1,0 +1,61 @@
+{
+  "freq": 770606250,
+  "freq_error": 349,
+  "signal": 999,
+  "noise": 999,
+  "source_num": 0,
+  "recorder_num": 0,
+  "tdma_slot": 0,
+  "phase2_tdma": 0,
+  "start_time": 1767983540,
+  "stop_time": 1767983549,
+  "emergency": 0,
+  "priority": 0,
+  "mode": 0,
+  "duplex": 0,
+  "encrypted": 0,
+  "call_length": 3,
+  "talkgroup": 3219,
+  "talkgroup_tag": "",
+  "talkgroup_description": "",
+  "talkgroup_group_tag": "",
+  "talkgroup_group": "",
+  "audio_type": "digital",
+  "short_name": "rwc",
+  "freqList": [
+    {
+      "freq": 770606250,
+      "time": 1767983540,
+      "pos": 0.0,
+      "len": 1.08,
+      "error_count": 576,
+      "spike_count": 31
+    },
+    {
+      "freq": 770606250,
+      "time": 1767983546,
+      "pos": 1.08,
+      "len": 1.44,
+      "error_count": 813,
+      "spike_count": 39
+    }
+  ],
+  "srcList": [
+    {
+      "src": -1,
+      "time": 1767983540,
+      "pos": 0.0,
+      "emergency": 0,
+      "signal_system": "",
+      "tag": ""
+    },
+    {
+      "src": 7630157,
+      "time": 1767983546,
+      "pos": 1.08,
+      "emergency": 0,
+      "signal_system": "",
+      "tag": ""
+    }
+  ]
+}
