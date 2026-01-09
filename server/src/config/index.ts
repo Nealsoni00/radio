@@ -26,6 +26,11 @@ export const config = {
     bitDepth: 16,
   },
 
+  sdr: {
+    centerFrequency: parseInt(process.env.SDR_CENTER_FREQ || '770500000', 10),
+    sampleRate: parseInt(process.env.SDR_SAMPLE_RATE || '2400000', 10),
+  },
+
   radioReference: {
     username: process.env.RR_USERNAME || '',
     password: process.env.RR_PASSWORD || '',

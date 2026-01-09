@@ -54,12 +54,23 @@ async function main() {
   app.get('/api/health', async () => ({
     status: 'ok',
     timestamp: Date.now(),
-    trunkRecorder: trStatusServer.isConnected() || fileWatcher.isActive(),
+    trunkRecorder: trStatusServer.isConnected() || fileWatcher.isWatching(),
     fileWatcher: fileWatcher.isWatching(),
     fileWatcherActive: fileWatcher.isActive(),
     audioReceiver: audioReceiver.isListening(),
     clients: 0,
   }));
+
+  // SDR configuration endpoint (for in-band calculation)
+  app.get('/api/sdr', async () => {
+    const halfBandwidth = config.sdr.sampleRate / 2;
+    return {
+      centerFrequency: config.sdr.centerFrequency,
+      sampleRate: config.sdr.sampleRate,
+      minFrequency: config.sdr.centerFrequency - halfBandwidth,
+      maxFrequency: config.sdr.centerFrequency + halfBandwidth,
+    };
+  });
 
   // Ensure Fastify is ready before creating HTTP server
   await app.ready();
@@ -180,6 +191,21 @@ async function main() {
     if (call.srcList && call.srcList.length > 0) {
       insertCallSources(call.id, call.srcList);
     }
+
+    // Broadcast new recording for auto-play
+    broadcastServer.broadcastNewRecording({
+      id: call.id,
+      talkgroupId: call.talkgroup,
+      alphaTag: call.talkgrouptag,
+      groupName: call.talkgroupGroup,
+      frequency: call.freq,
+      startTime: call.startTime,
+      stopTime: call.stopTime,
+      duration: call.length,
+      emergency: call.emergency,
+      encrypted: call.encrypted,
+      audioUrl: `/api/audio/${call.id}`,
+    });
   });
 
   // Start services

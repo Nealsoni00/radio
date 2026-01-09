@@ -8,7 +8,7 @@ export function useWebSocket() {
 
   const { addCall, updateCall, setActiveCalls } = useCallsStore();
   const { setConnected, setDecodeRate } = useConnectionStore();
-  const { setPlaying, setCurrentTalkgroup } = useAudioStore();
+  const { setPlaying, setCurrentTalkgroup, addToQueue, streamingTalkgroups, isLiveEnabled } = useAudioStore();
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -97,6 +97,24 @@ export function useWebSocket() {
           }
           break;
 
+        case 'newRecording':
+          if (message.call && isLiveEnabled) {
+            const tgId = message.call.talkgroupId || (message.call as any).talkgroup_id;
+            // Check if this talkgroup is in our streaming selection
+            // Empty set = all talkgroups
+            const shouldQueue = streamingTalkgroups.size === 0 || streamingTalkgroups.has(tgId);
+            if (shouldQueue && message.call.audioUrl) {
+              addToQueue({
+                id: message.call.id || '',
+                talkgroupId: tgId,
+                alphaTag: message.call.alphaTag || (message.call as any).alpha_tag,
+                audioUrl: message.call.audioUrl,
+                duration: message.call.duration ?? undefined,
+              });
+            }
+          }
+          break;
+
         case 'rates':
           if (message.rates) {
             const firstRate = Object.values(message.rates)[0];
@@ -111,7 +129,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [addCall, updateCall, setActiveCalls, setDecodeRate, setCurrentTalkgroup, setPlaying]
+    [addCall, updateCall, setActiveCalls, setDecodeRate, setCurrentTalkgroup, setPlaying, addToQueue, streamingTalkgroups, isLiveEnabled]
   );
 
   const handleAudioData = useCallback((buffer: ArrayBuffer) => {

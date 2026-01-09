@@ -16,6 +16,10 @@ export declare const config: {
         channels: number;
         bitDepth: number;
     };
+    sdr: {
+        centerFrequency: number;
+        sampleRate: number;
+    };
     radioReference: {
         username: string;
         password: string;

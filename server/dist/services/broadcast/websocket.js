@@ -96,6 +96,20 @@ export class BroadcastServer {
             client.ws.send(json);
         });
     }
+    // Broadcast new recording for auto-play
+    broadcastNewRecording(call) {
+        const message = { type: 'newRecording', call };
+        const json = JSON.stringify(message);
+        this.clients.forEach((client) => {
+            if (client.ws.readyState !== WebSocket.OPEN)
+                return;
+            if (!client.streamAudio)
+                return;
+            if (!this.isSubscribed(client, call.talkgroupId))
+                return;
+            client.ws.send(json);
+        });
+    }
     broadcastActiveCalls(calls) {
         const message = { type: 'callsActive', calls };
         const json = JSON.stringify(message);

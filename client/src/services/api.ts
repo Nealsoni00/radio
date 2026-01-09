@@ -2,6 +2,7 @@ import type {
   Call,
   Talkgroup,
   CallSource,
+  SDRConfig,
   RRState,
   RRCounty,
   RRSystem,
@@ -62,6 +63,12 @@ export async function getHealth(): Promise<{
 
 export function getAudioUrl(callId: string): string {
   return `${API_BASE}/audio/${callId}`;
+}
+
+export async function getSDRConfig(): Promise<SDRConfig> {
+  const response = await fetch(`${API_BASE}/sdr`);
+  if (!response.ok) throw new Error('Failed to fetch SDR config');
+  return response.json();
 }
 
 // RadioReference API functions

@@ -154,7 +154,7 @@ export function WaveformPlayer({
         const audio = new Audio();
         audio.crossOrigin = 'anonymous';
         audio.preload = 'auto';
-        audio.volume = volume;
+        audio.volume = initialVolume;
         audioRef.current = audio;
 
         // Set up audio event handlers
@@ -231,7 +231,14 @@ export function WaveformPlayer({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [src, autoPlay, extractPeaks, onPlay, onEnded, volume]);
+  }, [src, autoPlay, extractPeaks, onPlay, onEnded, initialVolume]);
+
+  // Handle volume changes without reloading audio
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
 
   // Animation loop for time updates
   useEffect(() => {

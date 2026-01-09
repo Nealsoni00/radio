@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { useTalkgroupsStore, useCallsStore } from '../../store';
+import { useTalkgroupsStore, useCallsStore, useAudioStore } from '../../store';
 
 export function TalkgroupFilter() {
   const {
@@ -15,7 +15,33 @@ export function TalkgroupFilter() {
     setSearchQuery,
   } = useTalkgroupsStore();
 
-  const { activeCalls } = useCallsStore();
+  const { activeCalls, calls } = useCallsStore();
+  const {
+    streamingTalkgroups,
+    toggleStreamingTalkgroup,
+    streamAllTalkgroups,
+    clearStreamingTalkgroups,
+    isLiveEnabled,
+    setLiveEnabled,
+    isInBand,
+    fetchSDRConfig,
+  } = useAudioStore();
+
+  // Fetch SDR config on mount
+  useEffect(() => {
+    fetchSDRConfig();
+  }, [fetchSDRConfig]);
+
+  // Get last known frequencies for talkgroups
+  const talkgroupFrequencies = useMemo(() => {
+    const freqMap = new Map<number, number>();
+    calls.forEach((call) => {
+      if (call.frequency) {
+        freqMap.set(call.talkgroup_id, call.frequency);
+      }
+    });
+    return freqMap;
+  }, [calls]);
 
   useEffect(() => {
     fetchTalkgroups();

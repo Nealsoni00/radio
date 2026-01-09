@@ -10,6 +10,9 @@ export declare class BroadcastServer {
     private isSubscribed;
     broadcastCallStart(call: Partial<Call>): void;
     broadcastCallEnd(call: Partial<Call>): void;
+    broadcastNewRecording(call: Partial<Call> & {
+        audioUrl?: string;
+    }): void;
     broadcastActiveCalls(calls: Partial<Call>[]): void;
     broadcastRates(rates: Record<string, {
         decoderate: number;

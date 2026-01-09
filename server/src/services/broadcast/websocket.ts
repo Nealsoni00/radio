@@ -123,6 +123,20 @@ export class BroadcastServer {
     });
   }
 
+  // Broadcast new recording for auto-play
+  broadcastNewRecording(call: Partial<Call> & { audioUrl?: string }): void {
+    const message: ServerMessage = { type: 'newRecording', call };
+    const json = JSON.stringify(message);
+
+    this.clients.forEach((client) => {
+      if (client.ws.readyState !== WebSocket.OPEN) return;
+      if (!client.streamAudio) return;
+      if (!this.isSubscribed(client, call.talkgroupId!)) return;
+
+      client.ws.send(json);
+    });
+  }
+
   broadcastActiveCalls(calls: Partial<Call>[]): void {
     const message: ServerMessage = { type: 'callsActive', calls };
     const json = JSON.stringify(message);

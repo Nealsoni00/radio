@@ -87,10 +87,17 @@ export interface ClientMessage {
 }
 
 export interface ServerMessage {
-  type: 'connected' | 'callStart' | 'callEnd' | 'callsActive' | 'rates' | 'error';
+  type: 'connected' | 'callStart' | 'callEnd' | 'callsActive' | 'newRecording' | 'rates' | 'error';
   clientId?: string;
-  call?: Partial<Call>;
+  call?: Partial<Call> & { audioUrl?: string };
   calls?: Partial<Call>[];
   rates?: Record<string, { decoderate: number }>;
   error?: string;
+}
+
+export interface SDRConfig {
+  centerFrequency: number;
+  sampleRate: number;
+  minFrequency: number;
+  maxFrequency: number;
 }

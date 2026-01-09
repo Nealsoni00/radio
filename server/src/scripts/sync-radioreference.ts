@@ -96,20 +96,24 @@ async function syncSystemDetails(systemId: number): Promise<void> {
   updateSyncProgress('system', systemId, 'in_progress');
 
   try {
+    // Get existing system to preserve stateId
+    const existingSystem = await import('../db/radioreference.js').then((m) => m.getSystem(systemId));
+
     const { system, sites, frequencies, talkgroups } = await scraper.getSystemDetails(systemId);
 
-    // Update system with additional details
-    if (system.id) {
+    // Update system with additional details, preserving stateId
+    if (system.id && existingSystem) {
       upsertSystem({
         id: system.id,
-        name: system.name || `System ${systemId}`,
-        type: system.type || 'Unknown',
-        flavor: system.flavor,
+        name: system.name || existingSystem.name || `System ${systemId}`,
+        type: system.type || existingSystem.type || 'Unknown',
+        flavor: system.flavor || existingSystem.flavor,
         voice: system.voice,
         systemId: system.systemId,
         wacn: system.wacn,
         nac: system.nac,
-        stateId: 0, // Will be preserved from existing record
+        stateId: existingSystem.stateId, // Preserve existing stateId
+        countyId: existingSystem.countyId,
         isActive: true,
       });
     }

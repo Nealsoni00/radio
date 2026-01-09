@@ -140,27 +140,43 @@ export class RadioReferenceScraper {
     const $ = cheerio.load(html);
     const states: RRState[] = [];
 
-    // Look for state links in the browse page
-    $('a[href*="/db/browse/stid/"]').each((_, el) => {
-      const href = $(el).attr('href') || '';
-      const match = href.match(/\/db\/browse\/stid\/(\d+)/);
-      if (match) {
-        const id = parseInt(match[1], 10);
-        const name = $(el).text().trim();
-        // Extract abbreviation from name or use state ID lookup
-        const abbrevMatch = name.match(/\(([A-Z]{2})\)/) || [];
-        const abbreviation = abbrevMatch[1] || this.stateIdToAbbrev(id);
-
-        if (name && !states.find((s) => s.id === id)) {
+    // States are in a dropdown select element with id="stidSelectorValue"
+    $('#stidSelectorValue option, select[name="stid"] option').each((_, el) => {
+      const value = $(el).attr('value');
+      const name = $(el).text().trim();
+      if (value && name && value !== '0' && value !== '') {
+        const id = parseInt(value, 10);
+        if (!isNaN(id) && id > 0 && !states.find((s) => s.id === id)) {
           states.push({
             id,
-            name: name.replace(/\s*\([A-Z]{2}\)\s*/, '').trim(),
-            abbreviation,
+            name,
+            abbreviation: this.stateIdToAbbrev(id),
             countryId: 1,
           });
         }
       }
     });
+
+    // If dropdown parsing failed, try alternate selectors
+    if (states.length === 0) {
+      // Try generic select options
+      $('select option').each((_, el) => {
+        const value = $(el).attr('value');
+        const name = $(el).text().trim();
+        // Check if this looks like a state (option value is 1-56 for US states)
+        if (value && name && /^[1-9]\d?$/.test(value)) {
+          const id = parseInt(value, 10);
+          if (id >= 1 && id <= 56 && !states.find((s) => s.id === id)) {
+            states.push({
+              id,
+              name,
+              abbreviation: this.stateIdToAbbrev(id),
+              countryId: 1,
+            });
+          }
+        }
+      });
+    }
 
     return states;
   }
@@ -172,18 +188,32 @@ export class RadioReferenceScraper {
     const $ = cheerio.load(html);
     const counties: RRCounty[] = [];
 
-    // Look for county links
-    $('a[href*="/db/browse/ctid/"]').each((_, el) => {
-      const href = $(el).attr('href') || '';
-      const match = href.match(/\/db\/browse\/ctid\/(\d+)/);
-      if (match) {
-        const id = parseInt(match[1], 10);
-        const name = $(el).text().trim();
-        if (name && !counties.find((c) => c.id === id)) {
+    // Counties are in a dropdown select with id="ctidSelectorValue"
+    $('#ctidSelectorValue option, select[name="ctid"] option').each((_, el) => {
+      const value = $(el).attr('value');
+      const name = $(el).text().trim();
+      if (value && name && value !== '0' && value !== '') {
+        const id = parseInt(value, 10);
+        if (!isNaN(id) && id > 0 && !counties.find((c) => c.id === id)) {
           counties.push({ id, stateId, name });
         }
       }
     });
+
+    // Fallback: look for county links if dropdown not found
+    if (counties.length === 0) {
+      $('a[href*="/db/browse/ctid/"]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const match = href.match(/\/db\/browse\/ctid\/(\d+)/);
+        if (match) {
+          const id = parseInt(match[1], 10);
+          const name = $(el).text().trim();
+          if (name && !counties.find((c) => c.id === id)) {
+            counties.push({ id, stateId, name });
+          }
+        }
+      });
+    }
 
     return counties;
   }
@@ -195,17 +225,32 @@ export class RadioReferenceScraper {
     const $ = cheerio.load(html);
     const systems: RRSystem[] = [];
 
-    // Look for trunked system links
+    // Look for trunked system links in table rows
     $('a[href*="/db/sid/"]').each((_, el) => {
       const href = $(el).attr('href') || '';
       const match = href.match(/\/db\/sid\/(\d+)/);
       if (match) {
         const id = parseInt(match[1], 10);
         const name = $(el).text().trim();
-        // Try to get system type from surrounding text
-        const parentText = $(el).parent().text();
-        const typeMatch = parentText.match(/(Project 25|P25|DMR|LTR|EDACS|Motorola|NXDN)/i);
-        const type = typeMatch ? typeMatch[1] : 'Unknown';
+
+        // Try to get system type from the row (usually in adjacent td)
+        let type = 'Unknown';
+        const $row = $(el).closest('tr');
+        if ($row.length) {
+          // Get text from all cells in the row
+          const rowText = $row.text();
+          const typeMatch = rowText.match(/(Project 25 Phase II|Project 25|P25 Phase II|P25|DMR|LTR|EDACS|Motorola|NXDN)/i);
+          if (typeMatch) {
+            type = typeMatch[1];
+          }
+        } else {
+          // Fallback: check parent text
+          const parentText = $(el).parent().text();
+          const typeMatch = parentText.match(/(Project 25|P25|DMR|LTR|EDACS|Motorola|NXDN)/i);
+          if (typeMatch) {
+            type = typeMatch[1];
+          }
+        }
 
         if (name && !systems.find((s) => s.id === id)) {
           systems.push({
@@ -365,16 +410,62 @@ export class RadioReferenceScraper {
   }
 
   private stateIdToAbbrev(stateId: number): string {
-    // RadioReference state IDs to abbreviations mapping
+    // RadioReference state IDs to abbreviations mapping (based on RR's actual IDs)
     const stateMap: Record<number, string> = {
-      1: 'AL', 2: 'AK', 3: 'AZ', 4: 'AR', 5: 'CA', 6: 'CO', 7: 'CT', 8: 'DE',
-      9: 'FL', 10: 'GA', 11: 'HI', 12: 'ID', 13: 'IL', 14: 'IN', 15: 'IA',
-      16: 'KS', 17: 'KY', 18: 'LA', 19: 'ME', 20: 'MD', 21: 'MA', 22: 'MI',
-      23: 'MN', 24: 'MS', 25: 'MO', 26: 'MT', 27: 'NE', 28: 'NV', 29: 'NH',
-      30: 'NJ', 31: 'NM', 32: 'NY', 33: 'NC', 34: 'ND', 35: 'OH', 36: 'OK',
-      37: 'OR', 38: 'PA', 39: 'RI', 40: 'SC', 41: 'SD', 42: 'TN', 43: 'TX',
-      44: 'UT', 45: 'VT', 46: 'VA', 47: 'WA', 48: 'WV', 49: 'WI', 50: 'WY',
-      51: 'DC', 52: 'PR', 53: 'VI', 54: 'GU', 55: 'AS', 56: 'MP',
+      1: 'AL',   // Alabama
+      2: 'AK',   // Alaska
+      4: 'AZ',   // Arizona
+      5: 'AR',   // Arkansas
+      6: 'CA',   // California
+      8: 'CO',   // Colorado
+      9: 'CT',   // Connecticut
+      10: 'DE',  // Delaware
+      11: 'DC',  // District of Columbia
+      12: 'FL',  // Florida
+      13: 'GA',  // Georgia
+      66: 'GU',  // Guam
+      15: 'HI',  // Hawaii
+      16: 'ID',  // Idaho
+      17: 'IL',  // Illinois
+      18: 'IN',  // Indiana
+      19: 'IA',  // Iowa
+      20: 'KS',  // Kansas
+      21: 'KY',  // Kentucky
+      22: 'LA',  // Louisiana
+      23: 'ME',  // Maine
+      24: 'MD',  // Maryland
+      25: 'MA',  // Massachusetts
+      26: 'MI',  // Michigan
+      27: 'MN',  // Minnesota
+      28: 'MS',  // Mississippi
+      29: 'MO',  // Missouri
+      30: 'MT',  // Montana
+      31: 'NE',  // Nebraska
+      32: 'NV',  // Nevada
+      33: 'NH',  // New Hampshire
+      34: 'NJ',  // New Jersey
+      35: 'NM',  // New Mexico
+      36: 'NY',  // New York
+      37: 'NC',  // North Carolina
+      38: 'ND',  // North Dakota
+      39: 'OH',  // Ohio
+      40: 'OK',  // Oklahoma
+      41: 'OR',  // Oregon
+      42: 'PA',  // Pennsylvania
+      72: 'PR',  // Puerto Rico
+      44: 'RI',  // Rhode Island
+      45: 'SC',  // South Carolina
+      46: 'SD',  // South Dakota
+      47: 'TN',  // Tennessee
+      48: 'TX',  // Texas
+      49: 'UT',  // Utah
+      50: 'VT',  // Vermont
+      78: 'VI',  // Virgin Islands
+      51: 'VA',  // Virginia
+      53: 'WA',  // Washington
+      54: 'WV',  // West Virginia
+      55: 'WI',  // Wisconsin
+      56: 'WY',  // Wyoming
     };
     return stateMap[stateId] || 'XX';
   }
