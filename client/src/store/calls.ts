@@ -34,6 +34,7 @@ export const useCallsStore = create<CallsState>((set) => ({
   },
 
   addCall: (call) => {
+    const isActive = call.isActive ?? true;
     const fullCall: Call = {
       id: call.id || '',
       talkgroup_id: call.talkgroup_id || 0,
@@ -48,12 +49,12 @@ export const useCallsStore = create<CallsState>((set) => ({
       alpha_tag: call.alpha_tag,
       group_name: call.group_name,
       group_tag: call.group_tag,
-      isActive: true,
+      isActive,
     };
 
     set((state) => ({
       calls: [fullCall, ...state.calls].slice(0, LIMITS.MAX_CALLS),
-      activeCalls: [...state.activeCalls, fullCall],
+      activeCalls: isActive ? [...state.activeCalls, fullCall] : state.activeCalls,
     }));
   },
 

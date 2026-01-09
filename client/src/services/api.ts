@@ -71,6 +71,27 @@ export async function getSDRConfig(): Promise<SDRConfig> {
   return response.json();
 }
 
+export interface RTLDevice {
+  index: number;
+  name: string;
+  manufacturer: string;
+  product: string;
+  serial: string;
+  connected: boolean;
+}
+
+export interface SDRDeviceStatus {
+  devices: RTLDevice[];
+  totalDevices: number;
+  lastChecked: number;
+}
+
+export async function getSDRDevices(): Promise<SDRDeviceStatus> {
+  const response = await fetch(`${API_BASE}/sdr/devices`);
+  if (!response.ok) throw new Error('Failed to fetch SDR devices');
+  return response.json();
+}
+
 import type { ControlChannelEvent } from '../types';
 
 export async function getControlChannelEvents(count?: number): Promise<{ events: ControlChannelEvent[] }> {
@@ -229,11 +250,24 @@ export interface ControlChannelScanResult {
   wacn?: string;
 }
 
+export interface SystemScanResult {
+  id: number;
+  name: string;
+  type: string;
+  systemId?: string;
+  wacn?: string;
+  nac?: string;
+  hasFrequencies: boolean;
+  controlChannelCount: number;
+}
+
 export async function getControlChannelsForCounty(countyId: number): Promise<{
   controlChannels: ControlChannelScanResult[];
+  systems: SystemScanResult[];
   county: RRCounty;
   total: number;
   uniqueSystems: number;
+  totalSystems: number;
 }> {
   const response = await fetch(`${API_BASE}/rr/counties/${countyId}/control-channels`);
   if (!response.ok) throw new Error('Failed to fetch control channels');
@@ -242,9 +276,11 @@ export async function getControlChannelsForCounty(countyId: number): Promise<{
 
 export async function getControlChannelsForState(stateId: number): Promise<{
   controlChannels: ControlChannelScanResult[];
+  systems: SystemScanResult[];
   state: RRState;
   total: number;
   uniqueSystems: number;
+  totalSystems: number;
 }> {
   const response = await fetch(`${API_BASE}/rr/states/${stateId}/control-channels`);
   if (!response.ok) throw new Error('Failed to fetch control channels');
@@ -324,6 +360,24 @@ export async function deleteSpectrumRecording(id: string): Promise<{ success: bo
   return response.json();
 }
 
+export interface RecordedControlChannelEvent {
+  relativeTime: number;
+  type: string;
+  talkgroup?: number;
+  talkgroupTag?: string;
+  frequency?: number;
+  message: string;
+}
+
+export async function getSpectrumRecordingEvents(id: string): Promise<{
+  metadata: SpectrumRecording;
+  controlChannelEvents: RecordedControlChannelEvent[];
+}> {
+  const response = await fetch(`${API_BASE}/spectrum/recordings/${id}?includeEvents=true`);
+  if (!response.ok) throw new Error('Failed to fetch recording events');
+  return response.json();
+}
+
 export async function getSpectrumReplayStatus(): Promise<ReplayStatus> {
   const response = await fetch(`${API_BASE}/spectrum/replay/status`);
   if (!response.ok) throw new Error('Failed to fetch replay status');
@@ -368,5 +422,57 @@ export async function getSpectrumStatus(): Promise<{
 }> {
   const response = await fetch(`${API_BASE}/spectrum/status`);
   if (!response.ok) throw new Error('Failed to fetch spectrum status');
+  return response.json();
+}
+
+// Frequency Scanner API
+export interface FrequencyScanResult {
+  frequency: number;
+  inRange: boolean;
+  signalStrength: number | null;
+  noiseFloor: number | null;
+  snr: number | null;
+  hasSignal: boolean;
+}
+
+export interface ScanResults {
+  timestamp: number;
+  centerFreq: number;
+  minFreq: number;
+  maxFreq: number;
+  sampleRate: number;
+  results: FrequencyScanResult[];
+  inRangeCount: number;
+  activeCount: number;
+}
+
+export interface ScannerStatus {
+  hasData: boolean;
+  dataAge: number | null;
+  coverage: {
+    centerFreq: number;
+    minFreq: number;
+    maxFreq: number;
+    sampleRate: number;
+  } | null;
+  ready: boolean;
+}
+
+export async function getScannerStatus(): Promise<ScannerStatus> {
+  const response = await fetch(`${API_BASE}/spectrum/scanner/status`);
+  if (!response.ok) throw new Error('Failed to fetch scanner status');
+  return response.json();
+}
+
+export async function scanFrequencies(frequencies: number[]): Promise<ScanResults> {
+  const response = await fetch(`${API_BASE}/spectrum/scanner/scan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ frequencies }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to scan frequencies');
+  }
   return response.json();
 }

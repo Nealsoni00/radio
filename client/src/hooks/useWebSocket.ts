@@ -1,20 +1,25 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useCallsStore, useConnectionStore, useAudioStore, useControlChannelStore } from '../store';
 import { useFFTStore } from '../store/fft';
 import type { ServerMessage, ClientMessage, Call } from '../types';
 
-export function useWebSocket() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
+// Singleton WebSocket manager - shared across all components
+class WebSocketManager {
+  private ws: WebSocket | null = null;
+  private reconnectTimeout: number | null = null;
+  private connectionCount = 0;
 
-  const { addCall, updateCall, setActiveCalls } = useCallsStore();
-  const { setConnected, setDecodeRate } = useConnectionStore();
-  const { setPlaying, setCurrentTalkgroup, addToQueue } = useAudioStore();
-  const { addEvent: addControlChannelEvent } = useControlChannelStore();
-  const { updateFFT: updateFFTData } = useFFTStore();
+  getSocket(): WebSocket | null {
+    return this.ws;
+  }
 
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+  connect(): void {
+    this.connectionCount++;
+
+    // Only create connection once
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -24,16 +29,19 @@ export function useWebSocket() {
 
     ws.onopen = () => {
       console.log('WebSocket connected');
-      setConnected(true);
+      useConnectionStore.getState().setConnected(true);
       // Subscribe to all talkgroups by default
       ws.send(JSON.stringify({ type: 'subscribeAll' } as ClientMessage));
     };
 
     ws.onmessage = (event) => {
+      console.log('WS message received, type:', typeof event.data, 'isBlob:', event.data instanceof Blob);
+
       // Handle binary data (audio or FFT)
       if (event.data instanceof Blob) {
+        console.log('Processing Blob, size:', event.data.size);
         event.data.arrayBuffer().then((buffer) => {
-          handleBinaryData(buffer);
+          this.handleBinaryData(buffer);
         });
         return;
       }
@@ -41,7 +49,7 @@ export function useWebSocket() {
       // Handle JSON messages
       try {
         const message: ServerMessage = JSON.parse(event.data);
-        handleMessage(message);
+        this.handleMessage(message);
       } catch (err) {
         console.error('Failed to parse WebSocket message:', err);
       }
@@ -49,108 +57,149 @@ export function useWebSocket() {
 
     ws.onclose = () => {
       console.log('WebSocket disconnected');
-      setConnected(false);
-      scheduleReconnect();
+      useConnectionStore.getState().setConnected(false);
+      this.ws = null;
+      this.scheduleReconnect();
     };
 
     ws.onerror = (err) => {
       console.error('WebSocket error:', err);
     };
 
-    wsRef.current = ws;
-  }, [setConnected]);
+    this.ws = ws;
+  }
 
-  const scheduleReconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-    }
-    reconnectTimeoutRef.current = window.setTimeout(() => {
-      console.log('Attempting to reconnect...');
-      connect();
-    }, 3000);
-  }, [connect]);
-
-  const handleMessage = useCallback(
-    (message: ServerMessage) => {
-      switch (message.type) {
-        case 'connected':
-          console.log('Connected with client ID:', message.clientId);
-          break;
-
-        case 'callStart':
-          if (message.call) {
-            const call = transformCall(message.call);
-            addCall(call);
-            setCurrentTalkgroup(call.talkgroup_id);
-            setPlaying(true);
-          }
-          break;
-
-        case 'callEnd':
-          if (message.call) {
-            const call = transformCall(message.call);
-            updateCall(call.id, call);
-            setPlaying(false);
-          }
-          break;
-
-        case 'callsActive':
-          if (message.calls) {
-            setActiveCalls(message.calls.map(transformCall));
-          }
-          break;
-
-        case 'newRecording':
-          if (message.call) {
-            // Add to calls list so it shows in Recent Calls
-            const call = transformCall(message.call);
-            addCall(call);
-
-            // Access store state directly to avoid stale closures
-            const audioState = useAudioStore.getState();
-            if (audioState.isLiveEnabled) {
-              const tgId = message.call.talkgroupId || (message.call as any).talkgroup_id;
-              // Check if this talkgroup is in our streaming selection
-              // Empty set = all talkgroups
-              const shouldQueue = audioState.streamingTalkgroups.size === 0 || audioState.streamingTalkgroups.has(tgId);
-              if (shouldQueue && message.call.audioUrl) {
-                console.log('Queueing new recording:', message.call.id, 'TG:', tgId);
-                addToQueue({
-                  id: message.call.id || '',
-                  talkgroupId: tgId,
-                  alphaTag: message.call.alphaTag || (message.call as any).alpha_tag,
-                  audioUrl: message.call.audioUrl,
-                  duration: message.call.duration ?? undefined,
-                });
-              }
-            }
-          }
-          break;
-
-        case 'rates':
-          if (message.rates) {
-            const firstRate = Object.values(message.rates)[0];
-            if (firstRate) {
-              setDecodeRate(firstRate.decoderate);
-            }
-          }
-          break;
-
-        case 'controlChannel':
-          if (message.event) {
-            addControlChannelEvent(message.event);
-          }
-          break;
-
-        case 'error':
-          console.error('Server error:', message.error);
-          break;
+  disconnect(): void {
+    this.connectionCount--;
+    // Only close if no more components are using it
+    if (this.connectionCount <= 0) {
+      this.connectionCount = 0;
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+        this.reconnectTimeout = null;
       }
-    },
-    [addCall, updateCall, setActiveCalls, setDecodeRate, setCurrentTalkgroup, setPlaying, addToQueue, addControlChannelEvent]
-  );
+      this.ws?.close();
+      this.ws = null;
+    }
+  }
 
-  const handleBinaryData = useCallback((buffer: ArrayBuffer) => {
+  send(message: ClientMessage): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
+    if (this.connectionCount > 0) {
+      this.reconnectTimeout = window.setTimeout(() => {
+        console.log('Attempting to reconnect...');
+        this.connect();
+      }, 3000);
+    }
+  }
+
+  private handleMessage(message: ServerMessage): void {
+    const { addCall, updateCall, setActiveCalls } = useCallsStore.getState();
+    const { setDecodeRate } = useConnectionStore.getState();
+    const { setPlaying, setCurrentTalkgroup, addToQueue } = useAudioStore.getState();
+    const { addEvent: addControlChannelEvent } = useControlChannelStore.getState();
+
+    switch (message.type) {
+      case 'connected':
+        console.log('Connected with client ID:', message.clientId);
+        break;
+
+      case 'callStart':
+        if (message.call) {
+          const call = transformCall(message.call);
+          addCall(call);
+          setCurrentTalkgroup(call.talkgroup_id);
+          setPlaying(true);
+        }
+        break;
+
+      case 'callEnd':
+        if (message.call) {
+          const call = transformCall(message.call);
+          updateCall(call.id, call);
+          setPlaying(false);
+        }
+        break;
+
+      case 'callsActive':
+        if (message.calls) {
+          setActiveCalls(message.calls.map(transformCall));
+        }
+        break;
+
+      case 'newRecording':
+        if (message.call) {
+          const call = transformCall(message.call);
+          const callsState = useCallsStore.getState();
+
+          // Check if this call already exists as active - if so, update it
+          const existingActive = callsState.activeCalls.find(
+            (c) => c.id === call.id || c.talkgroup_id === call.talkgroup_id
+          );
+
+          if (existingActive) {
+            // Update existing active call to mark it complete
+            updateCall(existingActive.id, { ...call, isActive: false });
+          } else {
+            // Add as a completed call (not active since it has audio file)
+            addCall({ ...call, isActive: false });
+          }
+
+          // Access store state directly to avoid stale closures
+          const audioState = useAudioStore.getState();
+          if (audioState.isLiveEnabled) {
+            const tgId = message.call.talkgroupId || (message.call as any).talkgroup_id;
+            // Check if this talkgroup is in our streaming selection
+            // Empty set = all talkgroups
+            const shouldQueue = audioState.streamingTalkgroups.size === 0 || audioState.streamingTalkgroups.has(tgId);
+            if (shouldQueue && message.call.audioUrl) {
+              console.log('Queueing new recording:', message.call.id, 'TG:', tgId);
+              addToQueue({
+                id: message.call.id || '',
+                talkgroupId: tgId,
+                alphaTag: message.call.alphaTag || (message.call as any).alpha_tag,
+                audioUrl: message.call.audioUrl,
+                duration: message.call.duration ?? undefined,
+              });
+            }
+          }
+        }
+        break;
+
+      case 'rates':
+        if (message.rates) {
+          const firstRate = Object.values(message.rates)[0];
+          if (firstRate) {
+            setDecodeRate(firstRate.decoderate);
+          }
+        }
+        break;
+
+      case 'controlChannel':
+        if (message.event) {
+          addControlChannelEvent(message.event);
+        }
+        break;
+
+      case 'error':
+        console.error('Server error:', message.error);
+        break;
+    }
+  }
+
+  private handleBinaryData(buffer: ArrayBuffer): void {
+    const { updateFFT: updateFFTData } = useFFTStore.getState();
+
+    console.log('Binary data received, size:', buffer.byteLength);
+
     // Parse header length (first 4 bytes, little-endian)
     const view = new DataView(buffer);
     const headerLen = view.getUint32(0, true);
@@ -160,9 +209,23 @@ export function useWebSocket() {
     const headerStr = new TextDecoder().decode(headerBytes);
     const header = JSON.parse(headerStr);
 
+    console.log('Binary header type:', header.type);
+
     if (header.type === 'fft') {
-      // Handle FFT data
-      const magnitudes = new Float32Array(buffer, 4 + headerLen);
+      // Handle FFT data - copy to aligned buffer since offset may not be 4-byte aligned
+      const fftDataStart = 4 + headerLen;
+      const fftDataBytes = new Uint8Array(buffer, fftDataStart);
+      const alignedBuffer = new ArrayBuffer(fftDataBytes.length);
+      new Uint8Array(alignedBuffer).set(fftDataBytes);
+      const magnitudes = new Float32Array(alignedBuffer);
+
+      // Log min/max values to debug scaling
+      let min = Infinity, max = -Infinity;
+      for (let i = 0; i < magnitudes.length; i++) {
+        if (magnitudes[i] < min) min = magnitudes[i];
+        if (magnitudes[i] > max) max = magnitudes[i];
+      }
+      console.log('FFT data parsed, bins:', magnitudes.length, 'min:', min.toFixed(1), 'max:', max.toFixed(1));
       updateFFTData({
         sourceIndex: header.sourceIndex,
         centerFreq: header.centerFreq,
@@ -188,68 +251,39 @@ export function useWebSocket() {
         })
       );
     }
-  }, [updateFFTData]);
+  }
+}
+
+// Create singleton instance
+const wsManager = new WebSocketManager();
+
+export function useWebSocket() {
+  useEffect(() => {
+    wsManager.connect();
+    return () => wsManager.disconnect();
+  }, []);
 
   const subscribe = useCallback((talkgroups: number[]) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'subscribe',
-          talkgroups,
-        } as ClientMessage)
-      );
-    }
+    wsManager.send({ type: 'subscribe', talkgroups });
   }, []);
 
   const unsubscribe = useCallback((talkgroups: number[]) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'unsubscribe',
-          talkgroups,
-        } as ClientMessage)
-      );
-    }
+    wsManager.send({ type: 'unsubscribe', talkgroups });
   }, []);
 
   const subscribeAll = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'subscribeAll' } as ClientMessage));
-    }
+    wsManager.send({ type: 'subscribeAll' });
   }, []);
 
   const enableAudio = useCallback((enabled: boolean) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'enableAudio',
-          enabled,
-        } as ClientMessage)
-      );
-    }
+    console.log('enableAudio called:', enabled);
+    wsManager.send({ type: 'enableAudio', enabled });
   }, []);
 
   const enableFFT = useCallback((enabled: boolean) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'enableFFT',
-          enabled,
-        } as ClientMessage)
-      );
-    }
+    console.log('enableFFT called:', enabled);
+    wsManager.send({ type: 'enableFFT', enabled });
   }, []);
-
-  useEffect(() => {
-    connect();
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      wsRef.current?.close();
-    };
-  }, [connect]);
 
   return {
     subscribe,

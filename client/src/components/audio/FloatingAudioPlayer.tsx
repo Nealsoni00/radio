@@ -123,7 +123,7 @@ export function FloatingAudioPlayer() {
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [isReceivingAudio, setIsReceivingAudio] = useState(false);
 
-  const { isLiveEnabled, volume, setVolume, setLiveEnabled } = useAudioStore();
+  const { isLiveEnabled, volume, setVolume, setLiveEnabled, setLiveStream } = useAudioStore();
   const { selectedTalkgroups } = useTalkgroupsStore();
 
   // Save position to localStorage
@@ -144,16 +144,27 @@ export function FloatingAudioPlayer() {
         lastAudioTimeRef.current = Date.now();
         setIsReceivingAudio(true);
 
+        const alphaTag = metadata?.talkgrouptag || metadata?.alphaTag;
+        const frequency = metadata?.freq || metadata?.frequency;
+
         // Update active call info
         setActiveCall({
           talkgroupId,
-          alphaTag: metadata?.talkgrouptag || metadata?.alphaTag,
-          frequency: metadata?.freq || metadata?.frequency,
+          alphaTag,
+          frequency,
           startTime: Date.now(),
+        });
+
+        // Update global live stream state for other components
+        setLiveStream({
+          talkgroupId,
+          alphaTag,
+          frequency,
+          lastUpdate: Date.now(),
         });
       }
     },
-    [isLiveEnabled, selectedTalkgroups]
+    [isLiveEnabled, selectedTalkgroups, setLiveStream]
   );
 
   // Initialize player and listen for audio events
@@ -170,6 +181,7 @@ export function FloatingAudioPlayer() {
         if (Date.now() - lastAudioTimeRef.current > 2000) {
           setIsReceivingAudio(false);
           setActiveCall(null);
+          setLiveStream(null);
         }
       }, 500);
 

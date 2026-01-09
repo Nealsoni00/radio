@@ -67,19 +67,20 @@ export function SystemList() {
     selectedStateId,
   } = useRadioReferenceStore();
 
-  if (!selectedStateId && systems.length === 0) {
+  // Show loading state when fetching initial systems
+  if (systems.length === 0 && isLoading) {
     return (
       <div className="flex items-center justify-center h-full text-slate-400">
         <div className="text-center">
-          <svg className="w-16 h-16 mx-auto mb-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-          </svg>
-          <p className="text-lg font-medium">Select a State</p>
-          <p className="text-sm mt-1">Choose a state from the sidebar to browse P25 systems</p>
+          <div className="w-8 h-8 mx-auto mb-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm">Loading systems...</p>
         </div>
       </div>
     );
   }
+
+  // Determine what scope is being shown
+  const scopeLabel = selectedStateId ? '' : 'All US ';
 
   return (
     <div className="flex flex-col h-full">
@@ -87,7 +88,7 @@ export function SystemList() {
       <div className="sticky top-0 bg-slate-900 border-b border-slate-700 px-4 py-2 z-10">
         <div className="flex items-center justify-between">
           <span className="text-sm text-slate-400">
-            {systems.length} of {systemsTotal.toLocaleString()} systems
+            {scopeLabel}{systems.length} of {systemsTotal.toLocaleString()} systems
           </span>
           {isLoading && (
             <span className="text-xs text-slate-500">Loading...</span>

@@ -30,24 +30,65 @@ clean:
 # Running the Stack
 # -----------------------------------------------------------------------------
 
-# Start the full stack (kills existing processes on ports first)
+# Start the full stack (server + trunk-recorder)
 start: _kill-ports _ensure-built
     #!/usr/bin/env bash
     set -e
     echo "Starting Radio Scanner..."
     echo ""
     mkdir -p trunk-recorder/audio
+
+    # Find trunk-recorder binary
+    TR_BIN=""
+    for loc in ./tr-build/build/trunk-recorder /usr/local/bin/trunk-recorder /usr/bin/trunk-recorder ~/trunk-recorder/build/trunk-recorder; do
+        if [[ -x "$loc" ]]; then
+            TR_BIN="$loc"
+            break
+        fi
+    done
+
+    # Start server
     npm start &
     SERVER_PID=$!
     sleep 2
+
+    # Start trunk-recorder if available
+    TR_PID=""
+    if [[ -n "$TR_BIN" ]]; then
+        echo "Starting trunk-recorder..."
+        cd trunk-recorder && "$TR_BIN" --config=config.json > /tmp/trunk-recorder-output.log 2>&1 &
+        TR_PID=$!
+        cd ..
+        sleep 3
+    else
+        echo "Warning: trunk-recorder not found (spectrum analyzer won't work)"
+        echo "Build it with: just build-trunk-recorder"
+    fi
+
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Server running: http://localhost:3000"
-    echo "WebSocket:      ws://localhost:3000/ws"
-    echo "API Health:     http://localhost:3000/api/health"
+    echo "Server running:     http://localhost:3000"
+    echo "WebSocket:          ws://localhost:3000/ws"
+    echo "API Health:         http://localhost:3000/api/health"
+    if [[ -n "$TR_PID" ]]; then
+        echo "trunk-recorder:     Running (PID: $TR_PID)"
+        echo "trunk-recorder log: /tmp/trunk-recorder-output.log"
+    fi
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "Press Ctrl+C to stop"
+    echo "Press Ctrl+C to stop all services"
+
+    # Cleanup function
+    cleanup() {
+        echo ""
+        echo "Stopping services..."
+        kill $SERVER_PID 2>/dev/null || true
+        [[ -n "$TR_PID" ]] && kill $TR_PID 2>/dev/null || true
+        exit 0
+    }
+    trap cleanup SIGINT SIGTERM
+
+    # Wait for server (trunk-recorder runs independently)
     wait $SERVER_PID
 
 # Start in development mode with hot reloading
@@ -109,7 +150,8 @@ trunk-recorder:
         exit 1
     fi
     cd trunk-recorder
-    "$TR_BIN" --config=config.json
+    # Redirect output to log file AND show in terminal for control channel monitoring
+    "$TR_BIN" --config=config.json 2>&1 | tee /tmp/trunk-recorder-output.log
 
 # Build trunk-recorder from source (requires cmake, gnuradio)
 build-trunk-recorder:

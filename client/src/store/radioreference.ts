@@ -10,6 +10,7 @@ import {
   addSelectedSystem as apiAddSelectedSystem,
   removeSelectedSystem as apiRemoveSelectedSystem,
   getRRStats,
+  getRRGeographyCounts,
 } from '../services/api';
 
 interface SystemDetails {
@@ -40,12 +41,17 @@ interface RadioReferenceState {
 
   // Filters
   typeFilter: string;
+  searchFilter: string;
 
   // User selections
   selectedSystems: RRSystem[];
 
   // Stats
   stats: RRStats | null;
+  geographyCounts: {
+    byState: Record<number, number>;
+    byCounty: Record<number, number>;
+  } | null;
 
   // Loading states
   isLoading: boolean;
@@ -62,10 +68,12 @@ interface RadioReferenceState {
   search: (query: string) => Promise<void>;
   clearSearch: () => void;
   setTypeFilter: (filter: string) => void;
+  setSearchFilter: (filter: string) => void;
   addSelectedSystem: (systemId: number) => Promise<void>;
   removeSelectedSystem: (systemId: number) => Promise<void>;
   fetchSelectedSystems: () => Promise<void>;
   fetchStats: () => Promise<void>;
+  fetchGeographyCounts: () => Promise<void>;
 }
 
 export const useRadioReferenceStore = create<RadioReferenceState>((set, get) => ({
@@ -82,8 +90,10 @@ export const useRadioReferenceStore = create<RadioReferenceState>((set, get) => 
   searchResults: null,
   isSearching: false,
   typeFilter: 'P25',
+  searchFilter: '',
   selectedSystems: [],
   stats: null,
+  geographyCounts: null,
   isLoading: false,
   isLoadingDetails: false,
   error: null,
@@ -117,10 +127,10 @@ export const useRadioReferenceStore = create<RadioReferenceState>((set, get) => 
       } catch (err) {
         set({ error: (err as Error).message, isLoading: false });
       }
-
-      // Also fetch systems for this state
-      await get().fetchSystems({ reset: true });
     }
+
+    // Fetch systems for this state (or all systems if stateId is null)
+    await get().fetchSystems({ reset: true });
   },
 
   selectCounty: async (countyId: number | null) => {
@@ -136,7 +146,7 @@ export const useRadioReferenceStore = create<RadioReferenceState>((set, get) => 
   },
 
   fetchSystems: async (options?: { reset?: boolean }) => {
-    const { selectedStateId, selectedCountyId, typeFilter, systems } = get();
+    const { selectedStateId, selectedCountyId, typeFilter, searchFilter, systems } = get();
     const offset = options?.reset ? 0 : systems.length;
 
     set({ isLoading: true, error: null });
@@ -145,6 +155,7 @@ export const useRadioReferenceStore = create<RadioReferenceState>((set, get) => 
         state: selectedStateId ?? undefined,
         county: selectedCountyId ?? undefined,
         type: typeFilter || undefined,
+        search: searchFilter || undefined,
         limit: 50,
         offset,
       });
@@ -213,6 +224,11 @@ export const useRadioReferenceStore = create<RadioReferenceState>((set, get) => 
     get().fetchSystems({ reset: true });
   },
 
+  setSearchFilter: (filter: string) => {
+    set({ searchFilter: filter, systems: [], systemsTotal: 0 });
+    get().fetchSystems({ reset: true });
+  },
+
   addSelectedSystem: async (systemId: number) => {
     try {
       await apiAddSelectedSystem(systemId);
@@ -244,6 +260,15 @@ export const useRadioReferenceStore = create<RadioReferenceState>((set, get) => 
     try {
       const { stats } = await getRRStats();
       set({ stats });
+    } catch (err) {
+      set({ error: (err as Error).message });
+    }
+  },
+
+  fetchGeographyCounts: async () => {
+    try {
+      const counts = await getRRGeographyCounts();
+      set({ geographyCounts: counts });
     } catch (err) {
       set({ error: (err as Error).message });
     }

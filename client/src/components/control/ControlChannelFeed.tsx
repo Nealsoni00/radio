@@ -75,7 +75,7 @@ function getEventTypeLabel(type: ControlChannelEvent['type']): string {
     case 'unit':
       return 'UNIT';
     default:
-      return type.toUpperCase().slice(0, 6);
+      return (type as string).toUpperCase().slice(0, 6);
   }
 }
 

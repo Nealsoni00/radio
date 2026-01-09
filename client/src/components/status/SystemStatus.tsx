@@ -1,57 +1,223 @@
 import { useEffect, useState } from 'react';
-import { useConnectionStore } from '../../store';
-import { getHealth } from '../../services/api';
+import { useConnectionStore, useAudioStore, useCallsStore } from '../../store';
+import { useFFTStore } from '../../store/fft';
+import { getHealth, getSDRDevices, type SDRDeviceStatus } from '../../services/api';
+
+function formatFrequency(freq: number): string {
+  return (freq / 1000000).toFixed(3);
+}
 
 export function SystemStatus() {
   const { isConnected, decodeRate } = useConnectionStore();
+  const { sdrConfig, isLiveEnabled, liveStream, audioQueue, fetchSDRConfig } = useAudioStore();
+  const { isEnabled: fftEnabled } = useFFTStore();
+  const { calls } = useCallsStore();
   const [health, setHealth] = useState<{
     trunkRecorder: boolean;
     fileWatcher: boolean;
+    fileWatcherActive: boolean;
     audioReceiver: boolean;
     clients: number;
   } | null>(null);
+  const [serverReachable, setServerReachable] = useState(false);
+  const [sdrDevices, setSDRDevices] = useState<SDRDeviceStatus | null>(null);
+
+  // Fetch SDR config on mount
+  useEffect(() => {
+    fetchSDRConfig();
+  }, [fetchSDRConfig]);
 
   useEffect(() => {
     const fetchHealth = async () => {
       try {
         const data = await getHealth();
+        setServerReachable(true);
         setHealth({
           trunkRecorder: data.trunkRecorder,
           fileWatcher: data.fileWatcher ?? true,
+          fileWatcherActive: data.fileWatcherActive ?? false,
           audioReceiver: data.audioReceiver,
           clients: data.clients,
         });
       } catch {
+        setServerReachable(false);
         setHealth(null);
       }
     };
 
+    const fetchDevices = async () => {
+      try {
+        const devices = await getSDRDevices();
+        setSDRDevices(devices);
+      } catch {
+        setSDRDevices(null);
+      }
+    };
+
     fetchHealth();
-    const interval = setInterval(fetchHealth, 10000);
-    return () => clearInterval(interval);
+    fetchDevices();
+    const healthInterval = setInterval(fetchHealth, 5000);
+    const devicesInterval = setInterval(fetchDevices, 10000); // Check devices less frequently
+    return () => {
+      clearInterval(healthInterval);
+      clearInterval(devicesInterval);
+    };
   }, []);
 
+  // Determine Live Audio status color
+  const getLiveAudioColor = (): 'green' | 'yellow' | 'red' | 'gray' => {
+    if (!isLiveEnabled) return 'gray';
+    if (!isConnected || !serverReachable) return 'red';
+    if (liveStream) return 'green';
+    return 'yellow';
+  };
+
+  // Determine FFT status color
+  const getFFTColor = (): 'green' | 'red' | 'gray' => {
+    if (!fftEnabled) return 'gray';
+    if (!isConnected || !serverReachable) return 'red';
+    return 'green';
+  };
+
   return (
-    <div className="px-4 py-3 bg-slate-800 border-t border-slate-700">
-      <div className="flex items-center justify-between text-xs">
-        <div className="flex items-center gap-4">
+    <div className="px-4 py-2 bg-slate-800 border-t border-slate-700">
+      {/* Top row: Status indicators */}
+      <div className="flex items-center justify-between text-xs mb-2">
+        <div className="flex items-center gap-3">
+          <StatusIndicator
+            label="Server"
+            status={serverReachable}
+          />
           <StatusIndicator
             label="WebSocket"
             status={isConnected}
           />
           <StatusIndicator
-            label="Recording"
-            status={health?.trunkRecorder ?? false}
+            label="RTL-SDR"
+            status={sdrDevices !== null && sdrDevices.totalDevices > 0}
+            color={
+              sdrDevices === null ? 'gray' :
+              sdrDevices.totalDevices === -1 ? 'yellow' :
+              sdrDevices.totalDevices > 0 ? 'green' : 'red'
+            }
+          />
+          <StatusIndicator
+            label="Trunk Recorder"
+            status={serverReachable && (health?.trunkRecorder ?? false)}
+          />
+          <StatusIndicator
+            label="File Watcher"
+            status={serverReachable && (health?.fileWatcherActive ?? false)}
           />
           <StatusIndicator
             label="Audio RX"
-            status={health?.audioReceiver ?? false}
+            status={serverReachable && (health?.audioReceiver ?? false)}
+          />
+          <StatusIndicator
+            label="Live Audio"
+            status={isLiveEnabled && isConnected}
+            color={getLiveAudioColor()}
+          />
+          <StatusIndicator
+            label="FFT"
+            status={fftEnabled && isConnected}
+            color={getFFTColor()}
           />
         </div>
         <div className="flex items-center gap-4 text-slate-400">
-          <span>Decode: <span className="text-white">{decodeRate.toFixed(1)}%</span></span>
-          {health && (
-            <span>Clients: <span className="text-white">{health.clients}</span></span>
+          {serverReachable ? (
+            <>
+              <span>Decode: <span className={decodeRate > 80 ? 'text-green-400' : decodeRate > 50 ? 'text-yellow-400' : 'text-red-400'}>{decodeRate.toFixed(1)}%</span></span>
+              <span>Calls: <span className="text-white">{calls.length}</span></span>
+              {audioQueue.length > 0 && (
+                <span>Queue: <span className="text-blue-400">{audioQueue.length}</span></span>
+              )}
+              {health && (
+                <span>Clients: <span className="text-white">{health.clients}</span></span>
+              )}
+            </>
+          ) : (
+            <span className="text-red-400">Server unreachable</span>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom row: SDR devices and band info */}
+      <div className="flex items-center justify-between text-xs border-t border-slate-700/50 pt-2">
+        <div className="flex items-center gap-4">
+          {/* RTL-SDR Device Info */}
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500">SDR:</span>
+            {sdrDevices === null ? (
+              <span className="text-slate-500">Checking...</span>
+            ) : sdrDevices.totalDevices === -1 ? (
+              <span className="text-yellow-400" title="rtl_test command not found">rtl-sdr not installed</span>
+            ) : sdrDevices.totalDevices === 0 ? (
+              <span className="text-red-400">No devices connected</span>
+            ) : (
+              <span className="text-green-400">
+                {sdrDevices.totalDevices} device{sdrDevices.totalDevices !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          {/* Show device details if connected */}
+          {sdrDevices && sdrDevices.devices.length > 0 && (
+            <div className="flex items-center gap-2 border-l border-slate-600 pl-4">
+              {sdrDevices.devices.map((device, idx) => (
+                <span
+                  key={device.index}
+                  className="text-slate-300"
+                  title={`Index: ${device.index}\nSerial: ${device.serial}\nManufacturer: ${device.manufacturer}\nProduct: ${device.product}`}
+                >
+                  {idx > 0 && <span className="text-slate-600 mx-1">|</span>}
+                  <span className="text-cyan-400">#{device.index}</span>
+                  <span className="text-slate-400 ml-1">{device.product || device.name}</span>
+                  {device.serial !== 'Unknown' && (
+                    <span className="text-slate-500 ml-1 font-mono">({device.serial})</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* Band info separator */}
+          {sdrConfig && (
+            <>
+              <div className="border-l border-slate-600 pl-4 flex items-center gap-2">
+                <span className="text-slate-500">Band:</span>
+                <span className="font-mono text-cyan-400">
+                  {formatFrequency(sdrConfig.minFrequency)} - {formatFrequency(sdrConfig.maxFrequency)} MHz
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">Center:</span>
+                <span className="font-mono text-white">
+                  {formatFrequency(sdrConfig.centerFrequency)} MHz
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">BW:</span>
+                <span className="font-mono text-white">
+                  {(sdrConfig.sampleRate / 1000000).toFixed(1)} MHz
+                </span>
+              </div>
+            </>
+          )}
+          {!sdrConfig && serverReachable && (
+            <span className="text-slate-500">Loading band config...</span>
+          )}
+        </div>
+        <div className="flex items-center gap-4">
+          {liveStream && isConnected && (
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-slate-400">Active:</span>
+              <span className="text-green-400 font-medium">{liveStream.alphaTag || `TG ${liveStream.talkgroupId}`}</span>
+              {liveStream.frequency && (
+                <span className="font-mono text-slate-400">
+                  @ {formatFrequency(liveStream.frequency)} MHz
+                </span>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -59,14 +225,30 @@ export function SystemStatus() {
   );
 }
 
-function StatusIndicator({ label, status }: { label: string; status: boolean }) {
+function StatusIndicator({
+  label,
+  status,
+  color,
+}: {
+  label: string;
+  status: boolean;
+  color?: 'green' | 'yellow' | 'red' | 'gray';
+}) {
+  const getColor = () => {
+    if (color) {
+      switch (color) {
+        case 'green': return 'bg-green-500';
+        case 'yellow': return 'bg-yellow-500';
+        case 'red': return 'bg-red-500';
+        case 'gray': return 'bg-slate-500';
+      }
+    }
+    return status ? 'bg-green-500' : 'bg-red-500';
+  };
+
   return (
     <div className="flex items-center gap-1.5">
-      <div
-        className={`w-2 h-2 rounded-full ${
-          status ? 'bg-green-500' : 'bg-red-500'
-        }`}
-      />
+      <div className={`w-2 h-2 rounded-full ${getColor()}`} />
       <span className="text-slate-400">{label}</span>
     </div>
   );

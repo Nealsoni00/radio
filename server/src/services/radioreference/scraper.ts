@@ -309,43 +309,74 @@ export class RadioReferenceScraper {
     const nacMatch = pageText.match(/NAC[:\s]+([0-9A-Fa-f]+)/);
     if (nacMatch) system.nac = nacMatch[1];
 
-    // Parse sites
+    // Parse sites - new RadioReference HTML structure
+    // Table has columns: RFSS (optional), Site, Name, County (optional), Freqs...
+    // Each frequency is in its own <td> cell with class 'data-text'
+    // Control channels have 'c' suffix and class 'crtl-pri'
     const siteTable = $('table').filter((_, el) => {
-      return $(el).text().includes('Site') && $(el).text().includes('Frequencies');
-    });
+      const text = $(el).text();
+      return text.includes('Site') && (text.includes('Freqs') || text.includes('Frequencies'));
+    }).first();
 
     let siteIdCounter = 1;
     siteTable.find('tr').each((_, row) => {
       const cells = $(row).find('td');
       if (cells.length >= 2) {
-        const siteText = cells.first().text().trim();
-        const siteNameMatch = siteText.match(/^([\d-]+)\s*[-–]\s*(.+)/);
+        // Find the site name - look for a link to /db/site/ or just text
+        let siteName = '';
+        let siteDbId = 0;
+        let siteNumericId = 0;
 
-        if (siteNameMatch) {
-          const siteId = systemId * 1000 + siteIdCounter++;
+        cells.each((idx, cell) => {
+          const $cell = $(cell);
+          const link = $cell.find('a[href*="/db/site/"]');
+          if (link.length) {
+            siteName = link.text().trim();
+            const hrefMatch = link.attr('href')?.match(/\/db\/site\/(\d+)/);
+            if (hrefMatch) {
+              siteDbId = parseInt(hrefMatch[1], 10);
+            }
+          }
+          // First cell often has site ID like "001 (1)" or "1 (1)"
+          if (idx === 0 || idx === 1) {
+            const cellText = $cell.text().trim();
+            const siteIdMatch = cellText.match(/^(\d+)\s*\((\d+)\)/);
+            if (siteIdMatch) {
+              siteNumericId = parseInt(siteIdMatch[2], 10) || parseInt(siteIdMatch[1], 10);
+            }
+          }
+        });
+
+        // Only create site if we found a name
+        if (siteName || siteDbId) {
+          const siteId = siteDbId || (systemId * 1000 + siteIdCounter++);
           const site: RRSite = {
             id: siteId,
             systemId,
-            name: siteNameMatch[2].trim(),
-            siteId: parseInt(siteNameMatch[1].replace(/-/g, ''), 10) || siteIdCounter,
+            name: siteName || `Site ${siteNumericId || siteIdCounter}`,
+            siteId: siteNumericId || siteIdCounter,
           };
           sites.push(site);
 
-          // Parse frequencies from this row
-          const freqText = cells.eq(1).text();
-          const freqMatches = freqText.match(/(\d{3}\.\d+)/g);
-          if (freqMatches) {
-            freqMatches.forEach((freqStr, idx) => {
-              const freq = parseFloat(freqStr) * 1000000; // Convert MHz to Hz
+          // Parse frequencies from remaining cells
+          // Each frequency is in its own <td>, control channels have 'c' suffix
+          cells.each((_, cell) => {
+            const $cell = $(cell);
+            const cellText = $cell.text().trim();
+            // Match frequencies like "856.7375c" or "152.9825" (with optional LCN prefix)
+            const freqMatch = cellText.match(/(\d{2,3}\.\d{3,5})c?$/);
+            if (freqMatch) {
+              const freq = parseFloat(freqMatch[1]) * 1_000_000; // Convert MHz to Hz
+              const isControl = cellText.endsWith('c') || $cell.hasClass('crtl-pri');
               frequencies.push({
                 siteId,
                 systemId,
                 frequency: Math.round(freq),
-                channelType: idx === 0 ? 'control' : 'voice',
-                isPrimary: idx === 0,
+                channelType: isControl ? 'control' : 'voice',
+                isPrimary: isControl,
               });
-            });
-          }
+            }
+          });
         }
       }
     });

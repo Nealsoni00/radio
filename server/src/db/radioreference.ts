@@ -565,6 +565,17 @@ export interface ControlChannelScanResult {
   wacn?: string;
 }
 
+export interface SystemScanResult {
+  id: number;
+  name: string;
+  type: string;
+  systemId?: string;
+  wacn?: string;
+  nac?: string;
+  hasFrequencies: boolean;
+  controlChannelCount: number;
+}
+
 export function getControlChannelsForCounty(countyId: number): ControlChannelScanResult[] {
   // Get control channels from systems in this county, or sites in this county
   return db.prepare(`
@@ -586,6 +597,24 @@ export function getControlChannelsForCounty(countyId: number): ControlChannelSca
   `).all(countyId, countyId) as ControlChannelScanResult[];
 }
 
+// Get systems in a county (even without frequency data)
+export function getSystemsForCountyScan(countyId: number): SystemScanResult[] {
+  return db.prepare(`
+    SELECT
+      s.id,
+      s.name,
+      s.type,
+      s.system_id as systemId,
+      s.wacn,
+      s.nac,
+      (SELECT COUNT(*) FROM rr_frequencies WHERE system_id = s.id) > 0 as hasFrequencies,
+      (SELECT COUNT(*) FROM rr_frequencies WHERE system_id = s.id AND channel_type = 'control') as controlChannelCount
+    FROM rr_systems s
+    WHERE s.county_id = ?
+    ORDER BY s.name
+  `).all(countyId) as SystemScanResult[];
+}
+
 // Get control channels for systems in a state (for broader scanning)
 export function getControlChannelsForState(stateId: number): ControlChannelScanResult[] {
   return db.prepare(`
@@ -605,6 +634,24 @@ export function getControlChannelsForState(stateId: number): ControlChannelScanR
       AND s.state_id = ?
     ORDER BY f.frequency
   `).all(stateId) as ControlChannelScanResult[];
+}
+
+// Get systems in a state (even without frequency data)
+export function getSystemsForStateScan(stateId: number): SystemScanResult[] {
+  return db.prepare(`
+    SELECT
+      s.id,
+      s.name,
+      s.type,
+      s.system_id as systemId,
+      s.wacn,
+      s.nac,
+      (SELECT COUNT(*) FROM rr_frequencies WHERE system_id = s.id) > 0 as hasFrequencies,
+      (SELECT COUNT(*) FROM rr_frequencies WHERE system_id = s.id AND channel_type = 'control') as controlChannelCount
+    FROM rr_systems s
+    WHERE s.state_id = ?
+    ORDER BY s.name
+  `).all(stateId) as SystemScanResult[];
 }
 
 // Rebuild search index

@@ -18,6 +18,8 @@ import {
   getSystemCountsByGeography,
   getControlChannelsForCounty,
   getControlChannelsForState,
+  getSystemsForCountyScan,
+  getSystemsForStateScan,
 } from '../../db/radioreference.js';
 
 export async function radioReferenceRoutes(app: FastifyInstance): Promise<void> {
@@ -179,12 +181,15 @@ export async function radioReferenceRoutes(app: FastifyInstance): Promise<void> 
   app.get<{ Params: { id: string } }>('/api/rr/counties/:id/control-channels', async (request) => {
     const countyId = parseInt(request.params.id, 10);
     const controlChannels = getControlChannelsForCounty(countyId);
+    const systems = getSystemsForCountyScan(countyId);
     const county = getCounty(countyId);
     return {
       controlChannels,
+      systems,
       county,
       total: controlChannels.length,
       uniqueSystems: new Set(controlChannels.map(c => c.systemId)).size,
+      totalSystems: systems.length,
     };
   });
 
@@ -192,12 +197,15 @@ export async function radioReferenceRoutes(app: FastifyInstance): Promise<void> 
   app.get<{ Params: { id: string } }>('/api/rr/states/:id/control-channels', async (request) => {
     const stateId = parseInt(request.params.id, 10);
     const controlChannels = getControlChannelsForState(stateId);
+    const systems = getSystemsForStateScan(stateId);
     const state = getState(stateId);
     return {
       controlChannels,
+      systems,
       state,
       total: controlChannels.length,
       uniqueSystems: new Set(controlChannels.map(c => c.systemId)).size,
+      totalSystems: systems.length,
     };
   });
 

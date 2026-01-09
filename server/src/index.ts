@@ -21,7 +21,9 @@ import { radioReferenceRoutes } from './routes/api/radioreference.js';
 import { spectrumRoutes } from './routes/api/spectrum.js';
 import { FFTRecorder } from './services/spectrum/fft-recorder.js';
 import { FFTReplayer } from './services/spectrum/fft-replayer.js';
+import { frequencyScanner } from './services/spectrum/frequency-scanner.js';
 import type { TRCallStart, TRCallEnd } from './types/index.js';
+import { detectRTLDevices } from './services/sdr/rtl-detect.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -94,7 +96,11 @@ async function main() {
   const fileWatcher = new FileWatcher(config.trunkRecorder.audioDir);
 
   // Initialize log watcher for control channel events
-  const logWatcher = new LogWatcher('/tmp/trunk-recorder.log');
+  // Try the output log first (used by `just start`), fall back to direct log
+  const trLogPath = (await import('fs')).existsSync('/tmp/trunk-recorder-output.log')
+    ? '/tmp/trunk-recorder-output.log'
+    : '/tmp/trunk-recorder.log';
+  const logWatcher = new LogWatcher(trLogPath);
 
   // Register API routes
   await app.register(callRoutes);
@@ -133,6 +139,11 @@ async function main() {
       minFrequency: config.sdr.centerFrequency - halfBandwidth,
       maxFrequency: config.sdr.centerFrequency + halfBandwidth,
     };
+  });
+
+  // RTL-SDR device detection endpoint
+  app.get('/api/sdr/devices', async () => {
+    return detectRTLDevices();
   });
 
   // Control channel events endpoint (for initial load)
@@ -212,6 +223,8 @@ async function main() {
     broadcastServer.broadcastFFT(packet);
     // Also record if recording is active
     fftRecorder.addPacket(packet);
+    // Update frequency scanner with latest FFT data
+    frequencyScanner.updateFFT(packet);
   });
 
   // Replayer broadcasts recorded FFT packets

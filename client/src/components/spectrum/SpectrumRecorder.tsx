@@ -9,9 +9,11 @@ import {
   pauseSpectrumReplay,
   resumeSpectrumReplay,
   getSpectrumStatus,
+  getSpectrumRecordingEvents,
   type SpectrumRecording,
   type RecordingStatus,
   type ReplayStatus,
+  type RecordedControlChannelEvent,
 } from '../../services/api';
 
 function formatDuration(ms: number): string {
@@ -43,13 +45,16 @@ export function SpectrumRecorder() {
   const [loop, setLoop] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [expandedRecordingId, setExpandedRecordingId] = useState<string | null>(null);
+  const [expandedEvents, setExpandedEvents] = useState<RecordedControlChannelEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   const refreshStatus = useCallback(async () => {
     try {
       const status = await getSpectrumStatus();
-      setRecordingStatus(status.recording);
-      setReplayStatus(status.replay);
-      setRecordings(status.recordings);
+      setRecordingStatus(status.recording || { isRecording: false });
+      setReplayStatus(status.replay || { isReplaying: false, isPaused: false });
+      setRecordings(status.recordings || []);
     } catch (err) {
       console.error('Failed to fetch status:', err);
     }
@@ -135,9 +140,50 @@ export function SpectrumRecorder() {
     if (!confirm('Delete this recording?')) return;
     try {
       await deleteSpectrumRecording(id);
+      if (expandedRecordingId === id) {
+        setExpandedRecordingId(null);
+        setExpandedEvents([]);
+      }
       await refreshStatus();
     } catch (err) {
       setError((err as Error).message);
+    }
+  };
+
+  const handleToggleExpand = async (id: string) => {
+    if (expandedRecordingId === id) {
+      setExpandedRecordingId(null);
+      setExpandedEvents([]);
+      return;
+    }
+
+    setExpandedRecordingId(id);
+    setEventsLoading(true);
+    try {
+      const data = await getSpectrumRecordingEvents(id);
+      setExpandedEvents(data.controlChannelEvents || []);
+    } catch (err) {
+      setError((err as Error).message);
+      setExpandedEvents([]);
+    } finally {
+      setEventsLoading(false);
+    }
+  };
+
+  const getEventTypeColor = (type: string): string => {
+    switch (type) {
+      case 'grant':
+        return 'text-green-400';
+      case 'update':
+        return 'text-blue-400';
+      case 'end':
+        return 'text-slate-400';
+      case 'encrypted':
+        return 'text-red-400';
+      case 'out_of_band':
+        return 'text-yellow-400';
+      default:
+        return 'text-slate-300';
     }
   };
 
@@ -277,60 +323,109 @@ export function SpectrumRecorder() {
               Loop
             </label>
           </div>
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {recordings.map((rec) => (
-              <div
-                key={rec.id}
-                className={`flex items-center justify-between p-2 rounded text-sm ${
-                  replayStatus.recordingId === rec.id
-                    ? 'bg-green-900/30 border border-green-700'
-                    : 'bg-slate-700/50 hover:bg-slate-700'
-                }`}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="text-slate-200 truncate">{rec.name}</div>
-                  <div className="text-xs text-slate-400 flex flex-wrap gap-x-2 gap-y-0.5">
-                    <span>{formatDuration(rec.duration)}</span>
-                    <span>{formatFrequency(rec.centerFreq)}</span>
-                    <span>{formatFileSize(rec.fileSize)}</span>
-                    {rec.transmissions !== undefined && rec.transmissions > 0 && (
-                      <span className="text-green-400">{rec.transmissions} TX</span>
-                    )}
-                    {rec.uniqueTalkgroups !== undefined && rec.uniqueTalkgroups > 0 && (
-                      <span className="text-blue-400">{rec.uniqueTalkgroups} TG</span>
-                    )}
-                    {rec.controlChannelEvents !== undefined && rec.controlChannelEvents > 0 && (
-                      <span className="text-yellow-400">{rec.controlChannelEvents} CC</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex gap-1 ml-2">
-                  {replayStatus.recordingId === rec.id ? (
-                    <button
-                      onClick={handleStopReplay}
-                      className="px-2 py-1 bg-slate-600 hover:bg-slate-500 text-white rounded text-xs"
-                    >
-                      Stop
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleStartReplay(rec.id)}
-                      disabled={replayStatus.isReplaying || recordingStatus.isRecording || isLoading}
-                      className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs disabled:opacity-50"
-                    >
-                      Play
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleDeleteRecording(rec.id)}
-                    disabled={replayStatus.recordingId === rec.id}
-                    className="px-2 py-1 bg-red-600/50 hover:bg-red-600 text-white rounded text-xs disabled:opacity-50"
+          <div className="space-y-1 max-h-64 overflow-y-auto">
+            {recordings.map((rec) => {
+              const hasEvents = (rec.controlChannelEvents ?? 0) > 0;
+              const isExpanded = expandedRecordingId === rec.id;
+              return (
+                <div key={rec.id}>
+                  <div
+                    className={`flex items-center justify-between p-2 rounded-t text-sm ${
+                      replayStatus.recordingId === rec.id
+                        ? 'bg-green-900/30 border border-green-700'
+                        : 'bg-slate-700/50 hover:bg-slate-700'
+                    } ${isExpanded ? 'rounded-b-none' : 'rounded-b'}`}
                   >
-                    Delete
-                  </button>
+                    <div
+                      className={`flex-1 min-w-0 ${hasEvents ? 'cursor-pointer' : ''}`}
+                      onClick={() => hasEvents && handleToggleExpand(rec.id)}
+                    >
+                      <div className="text-slate-200 truncate flex items-center gap-2">
+                        {rec.name}
+                        {hasEvents && (
+                          <span className={`text-xs transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-400 flex flex-wrap gap-x-2 gap-y-0.5">
+                        <span>{formatDuration(rec.duration)}</span>
+                        <span>{formatFrequency(rec.centerFreq)}</span>
+                        <span>{formatFileSize(rec.fileSize)}</span>
+                        {rec.transmissions !== undefined && rec.transmissions > 0 && (
+                          <span className="text-green-400 cursor-help" title="Transmissions - total radio calls recorded">{rec.transmissions} TX</span>
+                        )}
+                        {rec.uniqueTalkgroups !== undefined && rec.uniqueTalkgroups > 0 && (
+                          <span className="text-blue-400 cursor-help" title="Talkgroups - unique radio groups with activity">{rec.uniqueTalkgroups} TG</span>
+                        )}
+                        {rec.controlChannelEvents !== undefined && rec.controlChannelEvents > 0 && (
+                          <span className="text-yellow-400 cursor-help" title="Control Channel events - system signaling messages">{rec.controlChannelEvents} CC</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-1 ml-2">
+                      {replayStatus.recordingId === rec.id ? (
+                        <button
+                          onClick={handleStopReplay}
+                          className="px-2 py-1 bg-slate-600 hover:bg-slate-500 text-white rounded text-xs"
+                        >
+                          Stop
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleStartReplay(rec.id)}
+                          disabled={replayStatus.isReplaying || recordingStatus.isRecording || isLoading}
+                          className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs disabled:opacity-50"
+                        >
+                          Play
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteRecording(rec.id)}
+                        disabled={replayStatus.recordingId === rec.id}
+                        className="px-2 py-1 bg-red-600/50 hover:bg-red-600 text-white rounded text-xs disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  {/* Expanded events list */}
+                  {isExpanded && (
+                    <div className="bg-slate-800 border border-t-0 border-slate-600 rounded-b p-2 max-h-48 overflow-y-auto">
+                      {eventsLoading ? (
+                        <div className="text-xs text-slate-400 text-center py-2">Loading events...</div>
+                      ) : !expandedEvents || expandedEvents.length === 0 ? (
+                        <div className="text-xs text-slate-500 text-center py-2">No events recorded</div>
+                      ) : (
+                        <div className="space-y-0.5">
+                          {expandedEvents.map((event, idx) => (
+                            <div key={idx} className="text-xs flex gap-2 py-0.5 border-b border-slate-700/50 last:border-0">
+                              <span className="text-slate-500 font-mono w-12 flex-shrink-0">
+                                {(event.relativeTime / 1000).toFixed(1)}s
+                              </span>
+                              <span className={`font-medium w-12 flex-shrink-0 uppercase ${getEventTypeColor(event.type)}`}>
+                                {event.type.slice(0, 6)}
+                              </span>
+                              {event.talkgroup && (
+                                <span className="text-cyan-400 w-16 flex-shrink-0">
+                                  TG {event.talkgroup}
+                                </span>
+                              )}
+                              <span className="text-slate-300 truncate flex-1" title={event.message}>
+                                {event.talkgroupTag || event.message}
+                              </span>
+                              {event.frequency && (
+                                <span className="text-slate-500 font-mono flex-shrink-0">
+                                  {formatFrequency(event.frequency)}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

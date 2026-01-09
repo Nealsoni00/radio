@@ -11,6 +11,13 @@ interface QueuedAudio {
   duration?: number;
 }
 
+interface LiveStreamInfo {
+  talkgroupId: number;
+  alphaTag?: string;
+  frequency?: number;
+  lastUpdate: number;
+}
+
 interface AudioState {
   isLiveEnabled: boolean;
   isPlaying: boolean;
@@ -20,6 +27,7 @@ interface AudioState {
   audioQueue: QueuedAudio[];
   currentAudio: QueuedAudio | null;
   sdrConfig: SDRConfig | null;
+  liveStream: LiveStreamInfo | null;
   setLiveEnabled: (enabled: boolean) => void;
   setPlaying: (playing: boolean) => void;
   setCurrentTalkgroup: (tg: number | null) => void;
@@ -34,6 +42,7 @@ interface AudioState {
   setCurrentAudio: (audio: QueuedAudio | null) => void;
   fetchSDRConfig: () => Promise<void>;
   isInBand: (frequency: number) => boolean;
+  setLiveStream: (info: LiveStreamInfo | null) => void;
 }
 
 export const useAudioStore = create<AudioState>((set, get) => ({
@@ -45,6 +54,7 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   audioQueue: [],
   currentAudio: null,
   sdrConfig: null,
+  liveStream: null,
 
   setLiveEnabled: (enabled) => set({ isLiveEnabled: enabled }),
   setPlaying: (playing) => set({ isPlaying: playing }),
@@ -114,6 +124,8 @@ export const useAudioStore = create<AudioState>((set, get) => ({
     if (!sdrConfig) return true;
     return frequency >= sdrConfig.minFrequency && frequency <= sdrConfig.maxFrequency;
   },
+
+  setLiveStream: (info) => set({ liveStream: info }),
 }));
 
-export type { QueuedAudio };
+export type { QueuedAudio, LiveStreamInfo };

@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import type { FFTRecorder, RecordingMetadata } from '../../services/spectrum/fft-recorder.js';
 import type { FFTReplayer } from '../../services/spectrum/fft-replayer.js';
+import { frequencyScanner } from '../../services/spectrum/frequency-scanner.js';
 
 interface SpectrumRouteDeps {
   recorder: FFTRecorder;
@@ -49,13 +50,21 @@ export function spectrumRoutes(deps: SpectrumRouteDeps) {
       return { success: false, message: 'No recording in progress' };
     });
 
-    // Get a specific recording metadata
+    // Get a specific recording metadata and events
     app.get<{
       Params: { id: string };
+      Querystring: { includeEvents?: string };
     }>('/api/spectrum/recordings/:id', async (request, reply) => {
       const recording = recorder.getRecording(request.params.id);
       if (!recording) {
         return reply.code(404).send({ error: 'Recording not found' });
+      }
+      // Include events if requested (exclude packets to save bandwidth)
+      if (request.query.includeEvents === 'true') {
+        return {
+          metadata: recording.metadata,
+          controlChannelEvents: recording.controlChannelEvents,
+        };
       }
       return { metadata: recording.metadata };
     });
@@ -118,6 +127,81 @@ export function spectrumRoutes(deps: SpectrumRouteDeps) {
         recording: recorder.getRecordingStatus(),
         replay: replayer.getReplayStatus(),
         recordings: recorder.getRecordings(),
+      };
+    });
+
+    // ===== Frequency Scanner Endpoints =====
+
+    // Get scanner status and SDR coverage
+    app.get('/api/spectrum/scanner/status', async () => {
+      const coverage = frequencyScanner.getCoverage();
+      const hasData = frequencyScanner.hasData();
+      const dataAge = frequencyScanner.getDataAge();
+
+      return {
+        hasData,
+        dataAge,
+        coverage,
+        ready: hasData && dataAge !== null && dataAge < 5000, // Data is fresh (< 5 seconds old)
+      };
+    });
+
+    // Scan a list of frequencies for signal presence
+    app.post<{
+      Body: { frequencies: number[] };
+    }>('/api/spectrum/scanner/scan', async (request, reply) => {
+      const { frequencies } = request.body;
+
+      if (!frequencies || !Array.isArray(frequencies) || frequencies.length === 0) {
+        return reply.code(400).send({ error: 'frequencies array is required' });
+      }
+
+      if (frequencies.length > 1000) {
+        return reply.code(400).send({ error: 'Too many frequencies (max 1000)' });
+      }
+
+      const results = frequencyScanner.scanFrequencies(frequencies);
+
+      if (!results) {
+        return reply.code(503).send({
+          error: 'No FFT data available. Make sure trunk-recorder is running and sending FFT data.',
+        });
+      }
+
+      return results;
+    });
+
+    // Get signal strength at a single frequency
+    app.get<{
+      Params: { frequency: string };
+    }>('/api/spectrum/scanner/signal/:frequency', async (request, reply) => {
+      const frequency = parseInt(request.params.frequency, 10);
+
+      if (isNaN(frequency)) {
+        return reply.code(400).send({ error: 'Invalid frequency' });
+      }
+
+      const coverage = frequencyScanner.getCoverage();
+      if (!coverage) {
+        return reply.code(503).send({ error: 'No FFT data available' });
+      }
+
+      const inRange = frequencyScanner.isFrequencyInRange(frequency);
+      if (!inRange) {
+        return {
+          frequency,
+          inRange: false,
+          coverage,
+          message: `Frequency ${frequency / 1e6} MHz is outside current SDR range (${coverage.minFreq / 1e6} - ${coverage.maxFreq / 1e6} MHz)`,
+        };
+      }
+
+      const signal = frequencyScanner.getSignalStrength(frequency);
+      return {
+        frequency,
+        inRange: true,
+        signal,
+        coverage,
       };
     });
   };

@@ -4,13 +4,55 @@ A real-time P25 trunked radio scanner web application that captures radio traffi
 
 ## Table of Contents
 
-1. [How P25 Radio Works](#how-p25-radio-works)
-2. [Hardware: RTL-SDR v3](#hardware-rtl-sdr-v3)
-3. [The Decoding Pipeline](#the-decoding-pipeline)
-4. [Project Architecture](#project-architecture)
-5. [Libraries and Dependencies](#libraries-and-dependencies)
-6. [Limitations](#limitations)
-7. [Setup and Configuration](#setup-and-configuration)
+1. [Features](#features)
+2. [How P25 Radio Works](#how-p25-radio-works)
+3. [Hardware: RTL-SDR v3](#hardware-rtl-sdr-v3)
+4. [The Decoding Pipeline](#the-decoding-pipeline)
+5. [Project Architecture](#project-architecture)
+6. [Real-Time Data Flow](#real-time-data-flow)
+7. [Libraries and Dependencies](#libraries-and-dependencies)
+8. [Limitations](#limitations)
+9. [Setup and Configuration](#setup-and-configuration)
+
+---
+
+## Features
+
+### Live Radio Monitoring
+- Real-time call streaming with talkgroup filtering
+- Automatic audio playback queue for new transmissions
+- Control channel event feed showing grants, call endings, and system info
+- Active call indicators with frequency and duration
+
+### Spectrum Visualization
+- Real-time FFT waterfall display from RTL-SDR
+- Multiple color schemes (viridis, plasma, grayscale, classic)
+- Adjustable gain/range controls
+- Spectrum recording and playback for analysis
+
+### Control Channel Scanner
+- Scan control channel frequencies from RadioReference database
+- Real-time signal strength detection
+- SNR-based activity classification
+- County/state-based system discovery
+- Visual indicators for in-range and active frequencies
+
+### RadioReference Integration
+- Browse P25 systems by state and county
+- Import talkgroup lists automatically
+- Control channel frequency database
+- System site and coverage information
+
+### Call History
+- SQLite database for all recorded calls
+- Searchable call history with filtering
+- Waveform audio player with scrubbing
+- Call metadata (sources, duration, frequency)
+
+### Resizable Panel Layout
+- Customizable workspace with draggable dividers
+- Collapsible sidebar panels
+- Persistent layout preferences
 
 ---
 
@@ -276,7 +318,9 @@ trunk-recorder uses either:
 
 ## Project Architecture
 
-This project wraps trunk-recorder with a modern web interface, providing real-time streaming and historical playback.
+This project wraps trunk-recorder with a modern web interface, providing real-time streaming, spectrum visualization, and historical playback.
+
+> For detailed technical documentation, see [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ### System Overview
 
@@ -289,7 +333,7 @@ This project wraps trunk-recorder with a modern web interface, providing real-ti
    │   RTL-SDR    │
    │   Antenna    │
    └──────┬───────┘
-          │ USB (I/Q samples)
+          │ USB (I/Q samples @ 2.4 MSPS)
           ▼
    ┌──────────────────────────────────────────────────────────────┐
    │                      TRUNK-RECORDER                          │
@@ -299,38 +343,49 @@ This project wraps trunk-recorder with a modern web interface, providing real-ti
    │  │  Decoder    │  │             │  │             │          │
    │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘          │
    │         │                │                │                  │
-   │         │ Status         │ Audio          │ Audio            │
    │         ▼                ▼                ▼                  │
    │  ┌─────────────────────────────────────────────────────┐    │
-   │  │              Output Handlers                         │    │
-   │  │  • WebSocket status (port 3001)                     │    │
-   │  │  • UDP audio stream (port 9123)                     │    │
-   │  │  • WAV + JSON files (./audio directory)             │    │
+   │  │              Output Streams                          │    │
+   │  │  • UDP 9000: FFT spectrum data (real-time)          │    │
+   │  │  • UDP 9001: PCM audio stream                       │    │
+   │  │  • WebSocket 3001: Call status events               │    │
+   │  │  • Files: WAV recordings + JSON metadata            │    │
+   │  │  • Log: /tmp/trunk-recorder.log                     │    │
    │  └─────────────────────────────────────────────────────┘    │
    └──────────────────────────────────────────────────────────────┘
           │                    │                    │
-          │ WebSocket          │ UDP                │ Files
           ▼                    ▼                    ▼
    ┌──────────────────────────────────────────────────────────────┐
    │                         NODE.JS SERVER                        │
    │                                                               │
-   │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
-   │  │ TrunkRecorder   │  │ AudioReceiver   │  │ FileWatcher  │ │
-   │  │ StatusServer    │  │ (UDP listener)  │  │ (chokidar)   │ │
-   │  │ (WS on :3001)   │  │ (port 9123)     │  │              │ │
-   │  └────────┬────────┘  └────────┬────────┘  └──────┬───────┘ │
-   │           │                    │                   │         │
-   │           └────────────────────┼───────────────────┘         │
-   │                                ▼                             │
-   │                    ┌───────────────────────┐                 │
-   │                    │    BroadcastServer    │                 │
-   │                    │    (WebSocket /ws)    │                 │
-   │                    └───────────┬───────────┘                 │
-   │                                │                             │
-   │                    ┌───────────────────────┐                 │
-   │                    │    SQLite Database    │                 │
-   │                    │    (better-sqlite3)   │                 │
-   │                    └───────────────────────┘                 │
+   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
+   │  │ FFTReceiver  │  │AudioReceiver │  │ StatusServer │        │
+   │  │  UDP 9000    │  │  UDP 9001    │  │   WS 3001    │        │
+   │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘        │
+   │         │                 │                 │                 │
+   │  ┌──────┴───────┐  ┌──────┴───────┐  ┌──────┴───────┐        │
+   │  │ LogWatcher   │  │ FileWatcher  │  │ RadioRef DB  │        │
+   │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘        │
+   │         │                 │                 │                 │
+   │         └────────────┬────┴─────────────────┘                 │
+   │                      ▼                                        │
+   │  ┌─────────────────────────────────────────────────────┐     │
+   │  │              SPECTRUM ANALYSIS                       │     │
+   │  │  • FrequencyScanner: Real-time signal detection     │     │
+   │  │  • FFTRecorder: Record spectrum for analysis        │     │
+   │  │  • FFTReplayer: Playback recorded spectrum          │     │
+   │  └─────────────────────────────────────────────────────┘     │
+   │                      │                                        │
+   │                      ▼                                        │
+   │  ┌─────────────────────────────────────────────────────┐     │
+   │  │              BROADCAST SERVER                        │     │
+   │  │  WebSocket /ws - Binary (FFT, Audio) + JSON          │     │
+   │  └─────────────────────────────────────────────────────┘     │
+   │                      │                                        │
+   │  ┌───────────────────┴───────────────────┐                   │
+   │  │            SQLite Database             │                   │
+   │  │  calls, talkgroups, radioreference     │                   │
+   │  └───────────────────────────────────────┘                   │
    └──────────────────────────────────────────────────────────────┘
                                 │
                                 │ WebSocket (JSON + Binary)
@@ -338,11 +393,14 @@ This project wraps trunk-recorder with a modern web interface, providing real-ti
    ┌──────────────────────────────────────────────────────────────┐
    │                       WEB BROWSER                             │
    │                                                               │
-   │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
-   │  │  React App      │  │  Zustand Store  │  │  Web Audio   │ │
-   │  │  (Vite + TS)    │  │  (State Mgmt)   │  │  API Player  │ │
-   │  └─────────────────┘  └─────────────────┘  └──────────────┘ │
+   │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────┐│
+   │  │ Spectrum    │ │ Call Feed   │ │ Audio Queue │ │ Scanner ││
+   │  │ Waterfall   │ │ & History   │ │ & Player    │ │ (CC)    ││
+   │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────┘│
    │                                                               │
+   │  ┌─────────────────────────────────────────────────────────┐ │
+   │  │  Zustand Stores: fft, calls, audio, radioreference      │ │
+   │  └─────────────────────────────────────────────────────────┘ │
    └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -452,6 +510,125 @@ CREATE TABLE call_sources (
     tag TEXT
 );
 ```
+
+---
+
+## Real-Time Data Flow
+
+This section describes how data flows from the RTL-SDR through trunk-recorder to the web client in real-time.
+
+### FFT Spectrum Data Pipeline
+
+```
+RTL-SDR (2.4 MSPS I/Q samples)
+    │
+    ▼
+trunk-recorder FFT processing
+    │
+    │  UDP packets to port 9000
+    │  Binary format:
+    │  ┌────────────────┬─────────────┬──────────┬──────────────┬─────────────┐
+    │  │ Magic "FFTD"   │ Meta Length │ FFT Size │ JSON Meta    │ Float32 dB  │
+    │  │ 4 bytes        │ 4 bytes     │ 4 bytes  │ variable     │ fftSize * 4 │
+    │  └────────────────┴─────────────┴──────────┴──────────────┴─────────────┘
+    ▼
+FFTReceiver (server/src/services/trunk-recorder/fft-receiver.ts)
+    │
+    ├─► FrequencyScanner: Real-time signal detection
+    │   • Calculates signal strength at specific frequencies
+    │   • Estimates noise floor (excluding 50kHz radius)
+    │   • Determines SNR and activity status
+    │
+    ├─► FFTRecorder: Saves packets for later replay
+    │
+    └─► BroadcastServer: Streams to subscribed clients
+        │
+        │  WebSocket binary message:
+        │  ┌─────────────────┬──────────────────┬─────────────────┐
+        │  │ Header Length   │ JSON Header      │ Float32 FFT     │
+        │  │ 4 bytes (LE)    │ {type, freq...}  │ magnitudes dB   │
+        │  └─────────────────┴──────────────────┴─────────────────┘
+        ▼
+Web Client FFT Store
+    │
+    ├─► currentFFT: Latest spectrum data
+    ├─► waterfallHistory: Ring buffer (256 rows)
+    └─► Spectrum/Waterfall visualization
+```
+
+### Control Channel Events Pipeline
+
+```
+trunk-recorder log (/tmp/trunk-recorder.log)
+    │
+    │  Log entries parsed by regex:
+    │  "Starting P25 Recorder" → grant event
+    │  "Stopping P25 Recorder" → end event
+    │  "ENCRYPTED" → encrypted event
+    │
+    ▼
+LogWatcher (server/src/services/trunk-recorder/log-watcher.ts)
+    │
+    │  Emits ControlChannelEvent:
+    │  {
+    │    timestamp, type, talkgroup, frequency,
+    │    recorder, tdmaSlot, encrypted, emergency,
+    │    unit, decodeRate, wacn, nac, systemId
+    │  }
+    │
+    ├─► FFTRecorder: Records events with spectrum
+    │
+    └─► BroadcastServer: JSON to all clients
+        │
+        ▼
+Web Client Control Channel Feed
+    • Color-coded by event type
+    • Shows talkgroup, frequency, unit info
+    • Limited to 200 events in history
+```
+
+### Signal Detection Algorithm
+
+The frequency scanner uses this algorithm to detect active signals:
+
+```
+1. Receive FFT packet with magnitudes[] in dB
+
+2. For target frequency:
+   • Calculate bin index: (targetFreq - minFreq) / binWidth
+   • Get signal strength: magnitudes[binIndex]
+
+3. Calculate noise floor:
+   • Collect bins > 50kHz away from target
+   • Average these values
+
+4. Calculate SNR:
+   • snr = signalStrength - noiseFloor
+
+5. Determine status:
+   • Active: signalStrength > -85dB AND snr > 10dB
+   • Weak: signalStrength > -95dB AND snr > 5dB
+   • Inactive: otherwise
+```
+
+### WebSocket Message Types
+
+| Type | Format | Direction | Description |
+|------|--------|-----------|-------------|
+| `connected` | JSON | S→C | Client ID assignment |
+| `callStart` | JSON | S→C | New transmission begins |
+| `callEnd` | JSON | S→C | Transmission complete |
+| `callsActive` | JSON | S→C | List of ongoing calls |
+| `newRecording` | JSON | S→C | Recording ready for playback |
+| `controlChannel` | JSON | S→C | Control channel event |
+| `rates` | JSON | S→C | Decode rate statistics |
+| `fft` | Binary | S→C | Spectrum data |
+| `audio` | Binary | S→C | PCM audio samples |
+| `subscribeAll` | JSON | C→S | Subscribe to all traffic |
+| `subscribe` | JSON | C→S | Subscribe to talkgroups |
+| `unsubscribe` | JSON | C→S | Unsubscribe from talkgroups |
+| `enableAudio` | JSON | C→S | Toggle audio streaming |
+| `enableFFT` | JSON | C→S | Toggle FFT streaming |
 
 ---
 

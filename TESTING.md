@@ -12,6 +12,9 @@ This document defines the testing strategy for the Radio Scanner project. All co
 | Database change | Build + DB operation test |
 | WebSocket change | Build + connection test |
 | Audio change | Build + playback test |
+| Spectrum/FFT change | Build + spectrum page test |
+| Scanner change | Build + scanner API test |
+| RadioReference | Build + RR API test |
 
 ## Testing Commands
 
@@ -107,6 +110,11 @@ curl -I http://localhost:3000/api/audio/<call-id>
 curl -s http://localhost:3000/api/rr/states | head -c 500
 curl -s http://localhost:3000/api/rr/systems?limit=5
 curl -s http://localhost:3000/api/rr/stats
+
+# SDR/Spectrum API
+curl -s http://localhost:3000/api/sdr
+curl -s http://localhost:3000/api/spectrum/recordings
+curl -s http://localhost:3000/api/spectrum/scanner/status
 ```
 
 ### Level 4: WebSocket Tests (for WebSocket changes)
@@ -200,6 +208,79 @@ After modifying control channel handling:
 1. Verify events appear in feed (if trunk-recorder running)
 2. Check event formatting (time, frequency, talkgroup)
 3. Verify color coding by event type
+
+### Spectrum/FFT Visualization
+
+After modifying spectrum components:
+
+1. Navigate to the Spectrum page
+2. Test:
+   - [ ] Start/stop FFT streaming
+   - [ ] Waterfall renders with data
+   - [ ] Color scheme selector works
+   - [ ] Gain/range controls adjust display
+   - [ ] Recording start/stop works
+   - [ ] Recorded spectrum can be replayed
+
+### Spectrum Recording/Replay
+
+After modifying recording functionality:
+
+```bash
+# Test recording API
+curl -X POST http://localhost:3000/api/spectrum/recording/start \
+  -H "Content-Type: application/json" \
+  -d '{"duration": 10}'
+
+# Check status
+curl http://localhost:3000/api/spectrum/recording/status
+
+# List recordings
+curl http://localhost:3000/api/spectrum/recordings
+```
+
+### Control Channel Scanner
+
+After modifying the scanner:
+
+1. Navigate to the Scanner page
+2. Test:
+   - [ ] State/county selection works
+   - [ ] Control channels load from database
+   - [ ] Scan button triggers frequency analysis
+   - [ ] Auto-scan toggle works
+   - [ ] Signal strength indicators update
+   - [ ] In-range/active counts are correct
+
+### Frequency Scanner API
+
+```bash
+# Check scanner status
+curl http://localhost:3000/api/spectrum/scanner/status
+
+# Scan specific frequencies
+curl -X POST http://localhost:3000/api/spectrum/scanner/scan \
+  -H "Content-Type: application/json" \
+  -d '{"frequencies": [770106250, 770356250]}'
+
+# Get signal at frequency
+curl http://localhost:3000/api/spectrum/scanner/signal/770106250
+```
+
+### RadioReference Integration
+
+After modifying RadioReference functionality:
+
+```bash
+# Test database stats
+curl http://localhost:3000/api/rr/stats
+
+# Test state listing
+curl http://localhost:3000/api/rr/states
+
+# Test control channel lookup
+curl "http://localhost:3000/api/rr/control-channels/maricopa"
+```
 
 ---
 

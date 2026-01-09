@@ -1,5 +1,23 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTalkgroupsStore, useCallsStore, useAudioStore } from '../../store';
+
+// Format relative time (e.g., "5s", "2m", "1h")
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const seconds = Math.floor((now - timestamp * 1000) / 1000);
+
+  if (seconds < 0) return 'now';
+  if (seconds < 60) return `${seconds}s`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
 
 export function TalkgroupFilter() {
   const {
@@ -25,6 +43,7 @@ export function TalkgroupFilter() {
     setLiveEnabled,
     isInBand,
     fetchSDRConfig,
+    liveStream,
   } = useAudioStore();
 
   // Fetch SDR config on mount
@@ -32,15 +51,27 @@ export function TalkgroupFilter() {
     fetchSDRConfig();
   }, [fetchSDRConfig]);
 
-  // Get last known frequencies for talkgroups
-  const talkgroupFrequencies = useMemo(() => {
-    const freqMap = new Map<number, number>();
+  // Force re-render every 10 seconds to update relative times
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Get last transmission time and frequency for each talkgroup
+  const talkgroupData = useMemo(() => {
+    const dataMap = new Map<number, { lastTime: number; frequency: number }>();
     calls.forEach((call) => {
-      if (call.frequency) {
-        freqMap.set(call.talkgroup_id, call.frequency);
+      const existing = dataMap.get(call.talkgroup_id);
+      const callTime = call.start_time;
+      if (!existing || callTime > existing.lastTime) {
+        dataMap.set(call.talkgroup_id, {
+          lastTime: callTime,
+          frequency: call.frequency,
+        });
       }
     });
-    return freqMap;
+    return dataMap;
   }, [calls]);
 
   useEffect(() => {
@@ -58,9 +89,9 @@ export function TalkgroupFilter() {
     return new Set(activeCalls.map((c) => c.talkgroup_id));
   }, [activeCalls]);
 
-  // Filter talkgroups
+  // Filter and sort talkgroups by last transmission time
   const filteredTalkgroups = useMemo(() => {
-    return talkgroups.filter((tg) => {
+    const filtered = talkgroups.filter((tg) => {
       if (groupFilter && tg.group_name !== groupFilter) return false;
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -72,7 +103,15 @@ export function TalkgroupFilter() {
       }
       return true;
     });
-  }, [talkgroups, groupFilter, searchQuery]);
+
+    // Sort by last transmission time (most recent first)
+    // Talkgroups with no transmissions go to the bottom
+    return filtered.sort((a, b) => {
+      const aTime = talkgroupData.get(a.id)?.lastTime ?? 0;
+      const bTime = talkgroupData.get(b.id)?.lastTime ?? 0;
+      return bTime - aTime;
+    });
+  }, [talkgroups, groupFilter, searchQuery, talkgroupData]);
 
   return (
     <div className="flex flex-col h-full">
@@ -167,14 +206,21 @@ export function TalkgroupFilter() {
           const isSelected = selectedTalkgroups.size === 0 || selectedTalkgroups.has(tg.id);
           const isStreaming = isLiveEnabled && (streamingTalkgroups.size === 0 || streamingTalkgroups.has(tg.id));
           const isActive = activeTalkgroupIds.has(tg.id);
-          const lastFreq = talkgroupFrequencies.get(tg.id);
+          const isLiveNow = liveStream?.talkgroupId === tg.id;
+          const tgData = talkgroupData.get(tg.id);
+          const lastFreq = tgData?.frequency;
+          const lastTime = tgData?.lastTime;
           const inBand = lastFreq ? isInBand(lastFreq) : null;
 
           return (
             <div
               key={tg.id}
-              className={`p-2 border-b border-slate-700/50 ${
-                isActive ? 'bg-green-900/20 border-l-2 border-l-green-500' : ''
+              className={`p-2 border-b border-slate-700/50 transition-colors ${
+                isLiveNow
+                  ? 'bg-green-900/30 border-l-2 border-l-green-400'
+                  : isActive
+                  ? 'bg-green-900/20 border-l-2 border-l-green-500'
+                  : ''
               }`}
             >
               <div className="flex items-center gap-2">
@@ -201,9 +247,42 @@ export function TalkgroupFilter() {
                   </button>
                 )}
                 <span className="font-mono text-xs text-slate-500 w-12">{tg.id}</span>
-                <span className="text-sm text-white truncate flex-1">{tg.alpha_tag}</span>
+                <span className={`text-sm truncate flex-1 ${isLiveNow ? 'text-green-300 font-medium' : 'text-white'}`}>
+                  {tg.alpha_tag}
+                </span>
+                {/* Live waveform animation when actively streaming */}
+                {isLiveNow && (
+                  <div className="flex items-end gap-0.5 h-4" title="Currently streaming">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <div
+                        key={i}
+                        className="w-1 bg-green-400 rounded-sm"
+                        style={{
+                          animation: 'waveform 0.5s ease-in-out infinite alternate',
+                          animationDelay: `${i * 0.1}s`,
+                          height: '100%',
+                        }}
+                      />
+                    ))}
+                    <style>{`
+                      @keyframes waveform {
+                        0% { transform: scaleY(0.3); }
+                        100% { transform: scaleY(1); }
+                      }
+                    `}</style>
+                  </div>
+                )}
+                {/* Last transmission time */}
+                {lastTime && !isLiveNow && (
+                  <span
+                    className="text-xs text-slate-500 font-mono w-8 text-right"
+                    title={new Date(lastTime * 1000).toLocaleString()}
+                  >
+                    {formatRelativeTime(lastTime)}
+                  </span>
+                )}
                 {/* In-band indicator */}
-                {lastFreq && (
+                {lastFreq && !isLiveNow && (
                   <span
                     className={`text-xs px-1 rounded ${
                       inBand
@@ -215,12 +294,12 @@ export function TalkgroupFilter() {
                     {inBand ? 'IN' : 'OUT'}
                   </span>
                 )}
-                {isActive && (
+                {isActive && !isLiveNow && (
                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                 )}
               </div>
               {tg.group_name && (
-                <div className="text-xs text-slate-500 ml-7 mt-0.5 truncate">
+                <div className={`text-xs ml-7 mt-0.5 truncate ${isLiveNow ? 'text-green-400/70' : 'text-slate-500'}`}>
                   {tg.group_name}
                 </div>
               )}

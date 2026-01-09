@@ -47,9 +47,9 @@ export function WaterfallDisplay({ height = 200 }: WaterfallDisplayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageDataRef = useRef<ImageData | null>(null);
-  const lastHistoryLength = useRef<number>(0);
+  const lastUpdateCount = useRef<number>(0);
 
-  const { waterfallHistory, minDb, maxDb, colorScheme, currentFFT } = useFFTStore();
+  const { waterfallHistory, minDb, maxDb, colorScheme, currentFFT, updateCount } = useFFTStore();
   const colorMap = colorMaps[colorScheme];
 
   const draw = useCallback(() => {
@@ -63,10 +63,10 @@ export function WaterfallDisplay({ height = 200 }: WaterfallDisplayProps) {
     const fftSize = waterfallHistory[0].length;
 
     // Check if we have new data
-    if (waterfallHistory.length === lastHistoryLength.current) {
+    if (updateCount === lastUpdateCount.current) {
       return; // No new data
     }
-    lastHistoryLength.current = waterfallHistory.length;
+    lastUpdateCount.current = updateCount;
 
     // Create or reuse ImageData
     if (
@@ -108,11 +108,11 @@ export function WaterfallDisplay({ height = 200 }: WaterfallDisplayProps) {
     }
 
     ctx.putImageData(imageData, 0, 0);
-  }, [waterfallHistory, minDb, maxDb, colorMap]);
+  }, [waterfallHistory, minDb, maxDb, colorMap, updateCount]);
 
   useEffect(() => {
     draw();
-  }, [draw, waterfallHistory]);
+  }, [draw, updateCount]);
 
   // Handle resize
   useEffect(() => {
@@ -125,7 +125,7 @@ export function WaterfallDisplay({ height = 200 }: WaterfallDisplayProps) {
       canvas.width = Math.floor(rect.width);
       canvas.height = height;
       imageDataRef.current = null; // Force recreation
-      lastHistoryLength.current = 0; // Force redraw
+      lastUpdateCount.current = 0; // Force redraw
     });
 
     resizeObserver.observe(container);

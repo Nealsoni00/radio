@@ -36,7 +36,13 @@ export class FFTReceiver extends EventEmitter {
       try {
         const packet = this.parsePacket(msg);
         if (packet) {
-          console.log(`FFT packet received: ${packet.fftSize} bins, ${packet.centerFreq / 1e6} MHz`);
+          // Log min/max dB values to debug
+          let min = Infinity, max = -Infinity;
+          for (let i = 0; i < packet.magnitudes.length; i++) {
+            if (packet.magnitudes[i] < min) min = packet.magnitudes[i];
+            if (packet.magnitudes[i] > max) max = packet.magnitudes[i];
+          }
+          console.log(`FFT packet: ${packet.fftSize} bins, ${packet.centerFreq / 1e6} MHz, dB range: ${min.toFixed(1)} to ${max.toFixed(1)}`);
           this.emit('fft', packet);
         }
       } catch (err) {

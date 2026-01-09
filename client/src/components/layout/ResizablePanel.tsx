@@ -145,6 +145,12 @@ interface ResizeHandleProps {
 export function ResizeHandle({ direction, onDrag, className = '' }: ResizeHandleProps) {
   const isDragging = useRef(false);
   const lastPos = useRef(0);
+  const onDragRef = useRef(onDrag);
+
+  // Keep the callback ref up to date
+  useEffect(() => {
+    onDragRef.current = onDrag;
+  }, [onDrag]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -161,7 +167,7 @@ export function ResizeHandle({ direction, onDrag, className = '' }: ResizeHandle
       const currentPos = direction === 'horizontal' ? e.clientX : e.clientY;
       const delta = currentPos - lastPos.current;
       lastPos.current = currentPos;
-      onDrag(delta);
+      onDragRef.current(delta);
     };
 
     const handleMouseUp = () => {
@@ -179,7 +185,7 @@ export function ResizeHandle({ direction, onDrag, className = '' }: ResizeHandle
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [direction, onDrag]);
+  }, [direction]);
 
   const isHorizontal = direction === 'horizontal';
   const handleClasses = isHorizontal
