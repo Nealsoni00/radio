@@ -52,3 +52,91 @@ export interface ClientMessage {
   talkgroups?: number[];
   enabled?: boolean;
 }
+
+// RadioReference types
+export interface RRState {
+  id: number;
+  name: string;
+  abbreviation: string;
+  countryId: number;
+}
+
+export interface RRCounty {
+  id: number;
+  stateId: number;
+  name: string;
+}
+
+export interface RRSystem {
+  id: number;
+  name: string;
+  type: string;
+  flavor?: string;
+  voice?: string;
+  systemId?: string;
+  wacn?: string;
+  nac?: string;
+  rfss?: number;
+  stateId: number;
+  countyId?: number;
+  city?: string;
+  description?: string;
+  isActive: boolean;
+  stateName?: string;
+  stateAbbrev?: string;
+  countyName?: string;
+  talkgroupCount?: number;
+  siteCount?: number;
+}
+
+export interface RRSite {
+  id: number;
+  systemId: number;
+  name: string;
+  description?: string;
+  rfss?: number;
+  siteId?: number;
+  countyId?: number;
+  latitude?: number;
+  longitude?: number;
+  rangeMiles?: number;
+}
+
+export interface RRFrequency {
+  siteId: number;
+  systemId: number;
+  frequency: number;
+  channelType: 'control' | 'alternate' | 'voice';
+  lcn?: number;
+  isPrimary: boolean;
+  siteName?: string;
+}
+
+export interface RRTalkgroup {
+  systemId: number;
+  talkgroupId: number;
+  alphaTag?: string;
+  description?: string;
+  mode?: string;
+  category?: string;
+  tag?: string;
+}
+
+export interface RRSearchResult {
+  systems: RRSystem[];
+  talkgroups: (RRTalkgroup & {
+    systemName: string;
+    systemType: string;
+    stateName: string;
+    stateAbbrev: string;
+    countyName?: string;
+  })[];
+  total: number;
+}
+
+export interface RRStats {
+  totalSystems: number;
+  totalTalkgroups: number;
+  totalSites: number;
+  p25Systems: number;
+}

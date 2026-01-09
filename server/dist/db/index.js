@@ -63,7 +63,164 @@ export function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_calls_emergency ON calls(emergency) WHERE emergency = 1;
     CREATE INDEX IF NOT EXISTS idx_call_sources_call ON call_sources(call_id);
     CREATE INDEX IF NOT EXISTS idx_call_sources_source ON call_sources(source_id);
+
+    -- RadioReference States
+    CREATE TABLE IF NOT EXISTS rr_states (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      abbreviation TEXT NOT NULL,
+      country_id INTEGER DEFAULT 1,
+      last_synced INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_rr_states_abbrev ON rr_states(abbreviation);
+
+    -- RadioReference Counties
+    CREATE TABLE IF NOT EXISTS rr_counties (
+      id INTEGER PRIMARY KEY,
+      state_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      last_synced INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (state_id) REFERENCES rr_states(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rr_counties_state ON rr_counties(state_id);
+    CREATE INDEX IF NOT EXISTS idx_rr_counties_name ON rr_counties(name);
+
+    -- RadioReference P25 Trunked Systems
+    CREATE TABLE IF NOT EXISTS rr_systems (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      flavor TEXT,
+      voice TEXT,
+      system_id TEXT,
+      wacn TEXT,
+      nac TEXT,
+      rfss INTEGER,
+      state_id INTEGER,
+      county_id INTEGER,
+      city TEXT,
+      description TEXT,
+      last_synced INTEGER,
+      is_active INTEGER DEFAULT 1,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (state_id) REFERENCES rr_states(id),
+      FOREIGN KEY (county_id) REFERENCES rr_counties(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rr_systems_state ON rr_systems(state_id);
+    CREATE INDEX IF NOT EXISTS idx_rr_systems_county ON rr_systems(county_id);
+    CREATE INDEX IF NOT EXISTS idx_rr_systems_type ON rr_systems(type);
+    CREATE INDEX IF NOT EXISTS idx_rr_systems_name ON rr_systems(name);
+
+    -- RadioReference Sites (towers/repeaters)
+    CREATE TABLE IF NOT EXISTS rr_sites (
+      id INTEGER PRIMARY KEY,
+      system_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      rfss INTEGER,
+      site_id INTEGER,
+      county_id INTEGER,
+      latitude REAL,
+      longitude REAL,
+      range_miles REAL,
+      last_synced INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (system_id) REFERENCES rr_systems(id) ON DELETE CASCADE,
+      FOREIGN KEY (county_id) REFERENCES rr_counties(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rr_sites_system ON rr_sites(system_id);
+
+    -- RadioReference Frequencies
+    CREATE TABLE IF NOT EXISTS rr_frequencies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      site_id INTEGER NOT NULL,
+      system_id INTEGER NOT NULL,
+      frequency INTEGER NOT NULL,
+      channel_type TEXT NOT NULL DEFAULT 'voice',
+      lcn INTEGER,
+      is_primary INTEGER DEFAULT 0,
+      last_synced INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (site_id) REFERENCES rr_sites(id) ON DELETE CASCADE,
+      FOREIGN KEY (system_id) REFERENCES rr_systems(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_rr_frequencies_site ON rr_frequencies(site_id);
+    CREATE INDEX IF NOT EXISTS idx_rr_frequencies_system ON rr_frequencies(system_id);
+    CREATE INDEX IF NOT EXISTS idx_rr_frequencies_freq ON rr_frequencies(frequency);
+
+    -- RadioReference Talkgroups
+    CREATE TABLE IF NOT EXISTS rr_talkgroups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      system_id INTEGER NOT NULL,
+      talkgroup_id INTEGER NOT NULL,
+      alpha_tag TEXT,
+      description TEXT,
+      mode TEXT,
+      category TEXT,
+      tag TEXT,
+      last_synced INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      UNIQUE(system_id, talkgroup_id),
+      FOREIGN KEY (system_id) REFERENCES rr_systems(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_rr_talkgroups_system ON rr_talkgroups(system_id);
+    CREATE INDEX IF NOT EXISTS idx_rr_talkgroups_tgid ON rr_talkgroups(talkgroup_id);
+    CREATE INDEX IF NOT EXISTS idx_rr_talkgroups_tag ON rr_talkgroups(tag);
+
+    -- Sync Progress Tracking
+    CREATE TABLE IF NOT EXISTS rr_sync_progress (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER,
+      parent_id INTEGER,
+      status TEXT DEFAULT 'pending',
+      error_message TEXT,
+      started_at INTEGER,
+      completed_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_rr_sync_status ON rr_sync_progress(entity_type, status);
+
+    -- User Selected Systems
+    CREATE TABLE IF NOT EXISTS user_selected_systems (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      system_id INTEGER NOT NULL,
+      priority INTEGER DEFAULT 0,
+      enabled INTEGER DEFAULT 1,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (system_id) REFERENCES rr_systems(id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_selected_unique ON user_selected_systems(system_id);
   `);
+    // Create FTS5 virtual table for fuzzy search (separate exec to handle IF NOT EXISTS)
+    try {
+        db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS rr_search USING fts5(
+        system_name,
+        system_type,
+        talkgroup_alpha_tag,
+        talkgroup_description,
+        category,
+        tag,
+        state_name,
+        state_abbrev,
+        county_name,
+        city,
+        content='',
+        tokenize='trigram'
+      );
+    `);
+    }
+    catch (e) {
+        // FTS5 table may already exist
+    }
     console.log('Database initialized');
 }
 export function upsertTalkgroup(id, alphaTag, description, groupName, groupTag, mode = 'D') {

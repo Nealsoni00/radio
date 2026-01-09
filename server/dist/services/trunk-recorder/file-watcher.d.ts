@@ -7,7 +7,10 @@ export interface FileWatcherEvents {
 export declare class FileWatcher extends EventEmitter {
     private audioDir;
     private watcher;
+    private lastActivity;
     constructor(audioDir: string);
+    isActive(): boolean;
+    isWatching(): boolean;
     start(): void;
     private processJsonFile;
     stop(): void;

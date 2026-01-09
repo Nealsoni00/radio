@@ -41,7 +41,8 @@ export class TrunkRecorderClient extends EventEmitter {
             this.ws.on('error', (err) => {
                 this.isConnecting = false;
                 console.error('trunk-recorder WebSocket error:', err.message);
-                this.emit('error', err);
+                // Don't emit error to prevent crash - just schedule reconnect
+                this.scheduleReconnect();
             });
         }
         catch (err) {

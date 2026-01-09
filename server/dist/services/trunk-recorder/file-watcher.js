@@ -5,9 +5,17 @@ import { EventEmitter } from 'events';
 export class FileWatcher extends EventEmitter {
     audioDir;
     watcher = null;
+    lastActivity = 0;
     constructor(audioDir) {
         super();
         this.audioDir = audioDir;
+    }
+    isActive() {
+        // Consider active if we've seen a recording in the last 60 seconds
+        return this.watcher !== null && (Date.now() - this.lastActivity) < 60000;
+    }
+    isWatching() {
+        return this.watcher !== null;
     }
     start() {
         console.log(`Watching for audio files in ${this.audioDir}`);
@@ -21,6 +29,7 @@ export class FileWatcher extends EventEmitter {
         });
         this.watcher.on('add', async (jsonPath) => {
             try {
+                this.lastActivity = Date.now();
                 await this.processJsonFile(jsonPath);
             }
             catch (err) {

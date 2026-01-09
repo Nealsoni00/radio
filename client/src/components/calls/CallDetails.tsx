@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useCallsStore } from '../../store';
 import { getCall, getAudioUrl } from '../../services/api';
 import { formatTimestamp, formatDuration, formatFrequency, formatDate } from '../../utils/formatters';
+import { WaveformPlayer } from '../audio/WaveformPlayer';
 import type { CallSource } from '../../types';
 
 export function CallDetails() {
@@ -97,15 +98,18 @@ export function CallDetails() {
           )}
         </div>
 
-        {/* Audio player */}
+        {/* Audio player with waveform */}
         {selectedCall.audio_file && !selectedCall.isActive && (
           <div className="mb-4">
             <div className="text-xs text-slate-500 uppercase mb-2">Recording</div>
-            <audio
-              controls
+            <WaveformPlayer
               src={getAudioUrl(selectedCall.id)}
-              className="w-full"
-              preload="metadata"
+              height={64}
+              waveColor="#475569"
+              progressColor="#3b82f6"
+              cursorColor="#ef4444"
+              backgroundColor="#0f172a"
+              compact
             />
           </div>
         )}

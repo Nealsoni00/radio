@@ -1,4 +1,6 @@
-import { existsSync } from 'fs';
+import { existsSync, createReadStream } from 'fs';
+import { stat } from 'fs/promises';
+import { basename } from 'path';
 import { getCall } from '../../db/index.js';
 export async function audioRoutes(app) {
     // Serve audio file for a call
@@ -14,7 +16,12 @@ export async function audioRoutes(app) {
         if (!existsSync(call.audio_file)) {
             return reply.status(404).send({ error: 'Audio file not found on disk' });
         }
-        return reply.sendFile(call.audio_file);
+        const fileStat = await stat(call.audio_file);
+        const filename = basename(call.audio_file);
+        reply.header('Content-Type', 'audio/wav');
+        reply.header('Content-Length', fileStat.size);
+        reply.header('Content-Disposition', `inline; filename="${filename}"`);
+        return reply.send(createReadStream(call.audio_file));
     });
 }
 //# sourceMappingURL=audio.js.map

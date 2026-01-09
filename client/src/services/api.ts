@@ -1,4 +1,16 @@
-import type { Call, Talkgroup, CallSource } from '../types';
+import type {
+  Call,
+  Talkgroup,
+  CallSource,
+  RRState,
+  RRCounty,
+  RRSystem,
+  RRSite,
+  RRFrequency,
+  RRTalkgroup,
+  RRSearchResult,
+  RRStats,
+} from '../types';
 
 const API_BASE = '/api';
 
@@ -38,6 +50,8 @@ export async function getHealth(): Promise<{
   status: string;
   timestamp: number;
   trunkRecorder: boolean;
+  fileWatcher?: boolean;
+  fileWatcherActive?: boolean;
   audioReceiver: boolean;
   clients: number;
 }> {
@@ -48,4 +62,132 @@ export async function getHealth(): Promise<{
 
 export function getAudioUrl(callId: string): string {
   return `${API_BASE}/audio/${callId}`;
+}
+
+// RadioReference API functions
+export async function getRRStates(): Promise<{ states: RRState[] }> {
+  const response = await fetch(`${API_BASE}/rr/states`);
+  if (!response.ok) throw new Error('Failed to fetch states');
+  return response.json();
+}
+
+export async function getRRCounties(stateId: number): Promise<{ counties: RRCounty[] }> {
+  const response = await fetch(`${API_BASE}/rr/states/${stateId}/counties`);
+  if (!response.ok) throw new Error('Failed to fetch counties');
+  return response.json();
+}
+
+export async function getRRSystems(params?: {
+  state?: number;
+  county?: number;
+  type?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ systems: RRSystem[]; total: number }> {
+  const searchParams = new URLSearchParams();
+  if (params?.state) searchParams.set('state', params.state.toString());
+  if (params?.county) searchParams.set('county', params.county.toString());
+  if (params?.type) searchParams.set('type', params.type);
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const url = `${API_BASE}/rr/systems${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch systems');
+  return response.json();
+}
+
+export async function getRRSystem(id: number): Promise<{
+  system: RRSystem;
+  sites: RRSite[];
+  frequencies: RRFrequency[];
+  talkgroups: RRTalkgroup[];
+  talkgroupCount: number;
+}> {
+  const response = await fetch(`${API_BASE}/rr/systems/${id}`);
+  if (!response.ok) throw new Error('Failed to fetch system');
+  return response.json();
+}
+
+export async function getRRSites(systemId: number): Promise<{ sites: RRSite[] }> {
+  const response = await fetch(`${API_BASE}/rr/systems/${systemId}/sites`);
+  if (!response.ok) throw new Error('Failed to fetch sites');
+  return response.json();
+}
+
+export async function getRRFrequencies(systemId: number): Promise<{ frequencies: RRFrequency[] }> {
+  const response = await fetch(`${API_BASE}/rr/systems/${systemId}/frequencies`);
+  if (!response.ok) throw new Error('Failed to fetch frequencies');
+  return response.json();
+}
+
+export async function getRRTalkgroups(
+  systemId: number,
+  params?: { category?: string; tag?: string; limit?: number; offset?: number }
+): Promise<{ talkgroups: RRTalkgroup[]; total: number }> {
+  const searchParams = new URLSearchParams();
+  if (params?.category) searchParams.set('category', params.category);
+  if (params?.tag) searchParams.set('tag', params.tag);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const url = `${API_BASE}/rr/systems/${systemId}/talkgroups${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch talkgroups');
+  return response.json();
+}
+
+export async function searchRR(
+  query: string,
+  params?: { state?: number; type?: string; limit?: number }
+): Promise<RRSearchResult> {
+  const searchParams = new URLSearchParams({ q: query });
+  if (params?.state) searchParams.set('state', params.state.toString());
+  if (params?.type) searchParams.set('type', params.type);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+
+  const response = await fetch(`${API_BASE}/rr/search?${searchParams.toString()}`);
+  if (!response.ok) throw new Error('Failed to search');
+  return response.json();
+}
+
+export async function getSelectedSystems(): Promise<{ systems: RRSystem[] }> {
+  const response = await fetch(`${API_BASE}/rr/selected`);
+  if (!response.ok) throw new Error('Failed to fetch selected systems');
+  return response.json();
+}
+
+export async function addSelectedSystem(systemId: number, priority?: number): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/rr/selected`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ systemId, priority }),
+  });
+  if (!response.ok) throw new Error('Failed to add selected system');
+  return response.json();
+}
+
+export async function removeSelectedSystem(systemId: number): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/rr/selected/${systemId}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error('Failed to remove selected system');
+  return response.json();
+}
+
+export async function generateTRConfig(): Promise<{
+  config: unknown;
+  talkgroupFiles: Record<string, string>;
+  centerFrequency: number;
+  bandwidth: number;
+}> {
+  const response = await fetch(`${API_BASE}/rr/generate-config`);
+  if (!response.ok) throw new Error('Failed to generate config');
+  return response.json();
+}
+
+export async function getRRStats(): Promise<{ stats: RRStats }> {
+  const response = await fetch(`${API_BASE}/rr/stats`);
+  if (!response.ok) throw new Error('Failed to fetch stats');
+  return response.json();
 }

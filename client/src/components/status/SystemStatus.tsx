@@ -6,6 +6,7 @@ export function SystemStatus() {
   const { isConnected, decodeRate } = useConnectionStore();
   const [health, setHealth] = useState<{
     trunkRecorder: boolean;
+    fileWatcher: boolean;
     audioReceiver: boolean;
     clients: number;
   } | null>(null);
@@ -16,6 +17,7 @@ export function SystemStatus() {
         const data = await getHealth();
         setHealth({
           trunkRecorder: data.trunkRecorder,
+          fileWatcher: data.fileWatcher ?? true,
           audioReceiver: data.audioReceiver,
           clients: data.clients,
         });
@@ -38,7 +40,7 @@ export function SystemStatus() {
             status={isConnected}
           />
           <StatusIndicator
-            label="Trunk Recorder"
+            label="Recording"
             status={health?.trunkRecorder ?? false}
           />
           <StatusIndicator

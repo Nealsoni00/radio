@@ -16,5 +16,13 @@ export declare const config: {
         channels: number;
         bitDepth: number;
     };
+    radioReference: {
+        username: string;
+        password: string;
+        apiKey: string;
+        wsdlUrl: string;
+        syncDelayMs: number;
+        syncBatchSize: number;
+    };
 };
 //# sourceMappingURL=index.d.ts.map

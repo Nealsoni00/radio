@@ -25,4 +25,13 @@ export const config = {
     channels: 1,
     bitDepth: 16,
   },
+
+  radioReference: {
+    username: process.env.RR_USERNAME || '',
+    password: process.env.RR_PASSWORD || '',
+    apiKey: process.env.RR_API_KEY || '',
+    wsdlUrl: 'http://api.radioreference.com/soap2/?wsdl&v=15&s=rpc',
+    syncDelayMs: parseInt(process.env.RR_SYNC_DELAY_MS || '500', 10),
+    syncBatchSize: parseInt(process.env.RR_SYNC_BATCH_SIZE || '10', 10),
+  },
 };

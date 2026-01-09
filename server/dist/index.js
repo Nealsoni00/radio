@@ -1,18 +1,19 @@
+import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
-import { createServer } from 'http';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { config } from './config/index.js';
 import { initializeDatabase, upsertTalkgroup, insertCall, insertCallSources } from './db/index.js';
-import { TrunkRecorderClient } from './services/trunk-recorder/status-client.js';
+import { TrunkRecorderStatusServer } from './services/trunk-recorder/status-server.js';
 import { AudioReceiver } from './services/trunk-recorder/audio-receiver.js';
 import { FileWatcher } from './services/trunk-recorder/file-watcher.js';
 import { BroadcastServer } from './services/broadcast/websocket.js';
 import { callRoutes } from './routes/api/calls.js';
 import { talkgroupRoutes } from './routes/api/talkgroups.js';
 import { audioRoutes } from './routes/api/audio.js';
+import { radioReferenceRoutes } from './routes/api/radioreference.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 async function main() {
@@ -30,21 +31,30 @@ async function main() {
     await app.register(callRoutes);
     await app.register(talkgroupRoutes);
     await app.register(audioRoutes);
+    await app.register(radioReferenceRoutes);
+    // Initialize trunk-recorder status server (trunk-recorder connects to us)
+    const trStatusServer = new TrunkRecorderStatusServer(3001);
+    // Initialize audio receiver
+    const audioReceiver = new AudioReceiver(config.trunkRecorder.audioPort);
+    // Initialize file watcher for recordings
+    const fileWatcher = new FileWatcher(config.trunkRecorder.audioDir);
     // Health check endpoint
     app.get('/api/health', async () => ({
         status: 'ok',
         timestamp: Date.now(),
-        trunkRecorder: trClient.isConnected(),
+        trunkRecorder: trStatusServer.isConnected() || fileWatcher.isActive(),
+        fileWatcher: fileWatcher.isWatching(),
+        fileWatcherActive: fileWatcher.isActive(),
         audioReceiver: audioReceiver.isListening(),
-        clients: broadcastServer.getClientCount(),
+        clients: 0,
     }));
-    // Create HTTP server and start listening
-    const httpServer = createServer(app.server);
+    // Ensure Fastify is ready before creating HTTP server
+    await app.ready();
+    // Create HTTP server from Fastify's server
+    const httpServer = app.server;
     // Initialize broadcast server (WebSocket)
     const broadcastServer = new BroadcastServer(httpServer);
-    // Initialize trunk-recorder status client
-    const trClient = new TrunkRecorderClient(config.trunkRecorder.statusUrl);
-    trClient.on('callStart', (call) => {
+    trStatusServer.on('callStart', (call) => {
         console.log(`Call started: TG ${call.talkgroup} (${call.talkgrouptag})`);
         broadcastServer.broadcastCallStart({
             id: call.id,
@@ -56,7 +66,7 @@ async function main() {
             encrypted: false,
         });
     });
-    trClient.on('callEnd', (call) => {
+    trStatusServer.on('callEnd', (call) => {
         console.log(`Call ended: TG ${call.talkgroup} (${call.talkgrouptag}) - ${call.length}s`);
         // Upsert talkgroup info
         upsertTalkgroup(call.talkgroup, call.talkgrouptag, call.talkgroupDescription, call.talkgroupGroup, call.talkgroupTag);
@@ -93,7 +103,7 @@ async function main() {
             audioFile: call.filename,
         });
     });
-    trClient.on('callsActive', (calls) => {
+    trStatusServer.on('callsActive', (calls) => {
         broadcastServer.broadcastActiveCalls(calls.map((call) => ({
             id: call.id,
             talkgroupId: call.talkgroup,
@@ -101,16 +111,12 @@ async function main() {
             frequency: call.freq,
         })));
     });
-    trClient.on('rates', (rates) => {
+    trStatusServer.on('rates', (rates) => {
         broadcastServer.broadcastRates(rates);
     });
-    // Initialize audio receiver
-    const audioReceiver = new AudioReceiver(config.trunkRecorder.audioPort);
     audioReceiver.on('audio', (packet) => {
         broadcastServer.broadcastAudio(packet);
     });
-    // Initialize file watcher for recordings
-    const fileWatcher = new FileWatcher(config.trunkRecorder.audioDir);
     fileWatcher.on('call', (call, audioPath) => {
         console.log(`Recording detected: TG ${call.talkgroup} - ${audioPath}`);
         // Upsert talkgroup
@@ -133,24 +139,21 @@ async function main() {
         }
     });
     // Start services
-    trClient.connect();
     audioReceiver.start();
     fileWatcher.start();
-    // Start HTTP server
-    httpServer.listen(config.server.port, config.server.host, () => {
-        console.log(`Server listening on http://${config.server.host}:${config.server.port}`);
-        console.log(`WebSocket available at ws://${config.server.host}:${config.server.port}/ws`);
-    });
+    // Start Fastify server
+    await app.listen({ port: config.server.port, host: config.server.host });
+    console.log(`Server listening on http://${config.server.host}:${config.server.port}`);
+    console.log(`WebSocket available at ws://${config.server.host}:${config.server.port}/ws`);
     // Graceful shutdown
-    const shutdown = () => {
+    const shutdown = async () => {
         console.log('Shutting down...');
-        trClient.disconnect();
+        trStatusServer.close();
         audioReceiver.stop();
         fileWatcher.stop();
-        httpServer.close(() => {
-            console.log('Server closed');
-            process.exit(0);
-        });
+        await app.close();
+        console.log('Server closed');
+        process.exit(0);
     };
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);

@@ -72,3 +72,67 @@ Always use `just`:
 - "Build the project" → `just build`
 - "Stop everything" → `just stop`
 - "Check if it's running" → `just status`
+
+## Audio Playback Components
+
+### WaveformPlayer
+
+**ALWAYS use `WaveformPlayer` for audio file playback.** Never use a basic `<audio>` element.
+
+Location: `client/src/components/audio/WaveformPlayer.tsx`
+
+Features:
+- Visual waveform display
+- Click/drag to scrub through audio
+- Play/pause controls
+- Volume control with slider
+- Time display (current / duration)
+- Keyboard shortcuts (space, arrows)
+- Touch support for mobile
+
+```tsx
+import { WaveformPlayer } from '../components/audio/WaveformPlayer';
+
+// Basic usage
+<WaveformPlayer src="/api/audio/call-123" />
+
+// Full props
+<WaveformPlayer
+  src="/api/audio/call-123"
+  title="Phoenix PD Dispatch"
+  height={80}                    // Waveform height in px
+  waveColor="#475569"            // Unplayed portion color
+  progressColor="#3b82f6"        // Played portion color
+  cursorColor="#ef4444"          // Playhead color
+  backgroundColor="#0f172a"      // Canvas background
+  autoPlay={false}
+  initialVolume={0.8}
+  showVolumeControl={true}
+  showTimeDisplay={true}
+  compact={false}                // Smaller controls
+  onPlay={() => {}}
+  onPause={() => {}}
+  onEnded={() => {}}
+  onTimeUpdate={(time) => {}}
+/>
+```
+
+Recommended colors for dark theme:
+- `waveColor="#475569"` (slate-600)
+- `progressColor="#3b82f6"` (blue-500)
+- `cursorColor="#ef4444"` (red-500)
+- `backgroundColor="#0f172a"` (slate-950)
+
+## Traffic Rules
+
+**NEVER create a "demo" mode, mock data, simulated traffic, or fake radio calls.**
+
+This project works exclusively with real trunk-recorder traffic. When implementing features:
+
+- Only integrate with real trunk-recorder WebSocket feeds and audio streams
+- Do not generate synthetic or sample radio traffic
+- Do not create placeholder data or mock calls
+- Do not implement any "demo", "test mode", or "simulation" functionality
+- All traffic must come from actual trunk-recorder instances
+
+If trunk-recorder is not available, the application should show no traffic rather than generating fake data.

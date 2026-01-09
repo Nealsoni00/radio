@@ -11,9 +11,19 @@ export interface FileWatcherEvents {
 
 export class FileWatcher extends EventEmitter {
   private watcher: FSWatcher | null = null;
+  private lastActivity: number = 0;
 
   constructor(private audioDir: string) {
     super();
+  }
+
+  isActive(): boolean {
+    // Consider active if we've seen a recording in the last 60 seconds
+    return this.watcher !== null && (Date.now() - this.lastActivity) < 60000;
+  }
+
+  isWatching(): boolean {
+    return this.watcher !== null;
   }
 
   start(): void {
@@ -30,6 +40,7 @@ export class FileWatcher extends EventEmitter {
 
     this.watcher.on('add', async (jsonPath: string) => {
       try {
+        this.lastActivity = Date.now();
         await this.processJsonFile(jsonPath);
       } catch (err) {
         console.error(`Failed to process ${jsonPath}:`, err);
