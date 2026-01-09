@@ -6,7 +6,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "sync:rr": "tsx src/scripts/sync-radioreference.ts"
+    "sync:rr": "tsx src/scripts/sync-radioreference.ts",
+    "sync:all": "tsx src/scripts/sync-all-us.ts"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",

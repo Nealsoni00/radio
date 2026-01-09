@@ -2,6 +2,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'http';
 import type { Server } from 'http';
 import type { ClientMessage, ServerMessage, Call, AudioPacket } from '../../types/index.js';
+import type { ControlChannelEvent } from '../trunk-recorder/log-watcher.js';
 
 interface Client {
   id: string;
@@ -176,6 +177,22 @@ export class BroadcastServer {
       if (!this.isSubscribed(client, packet.talkgroupId)) return;
 
       client.ws.send(message);
+    });
+  }
+
+  broadcastControlChannel(event: ControlChannelEvent): void {
+    const message = {
+      type: 'controlChannel',
+      event: {
+        ...event,
+        timestamp: event.timestamp.toISOString(),
+      },
+    };
+    const json = JSON.stringify(message);
+
+    this.clients.forEach((client) => {
+      if (client.ws.readyState !== WebSocket.OPEN) return;
+      client.ws.send(json);
     });
   }
 

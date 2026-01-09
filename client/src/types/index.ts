@@ -38,11 +38,31 @@ export interface CallSource {
   unit_tag?: string;
 }
 
+export interface ControlChannelEvent {
+  timestamp: string;
+  type: 'grant' | 'update' | 'end' | 'encrypted' | 'out_of_band' | 'no_recorder' | 'decode_rate' | 'system_info' | 'unit';
+  talkgroup?: number;
+  talkgroupTag?: string;
+  frequency?: number;
+  recorder?: number;
+  tdma?: boolean;
+  slot?: number;
+  unitId?: number;
+  decodeRate?: number;
+  systemId?: number;
+  wacn?: string;
+  nac?: string;
+  rfss?: number;
+  siteId?: number;
+  message: string;
+}
+
 export interface ServerMessage {
-  type: 'connected' | 'callStart' | 'callEnd' | 'callsActive' | 'newRecording' | 'rates' | 'error';
+  type: 'connected' | 'callStart' | 'callEnd' | 'callsActive' | 'newRecording' | 'controlChannel' | 'rates' | 'error';
   clientId?: string;
   call?: Partial<Call> & { audioUrl?: string; talkgroupId?: number; alphaTag?: string };
   calls?: Partial<Call>[];
+  event?: ControlChannelEvent;
   rates?: Record<string, { decoderate: number }>;
   error?: string;
 }

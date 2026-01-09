@@ -4,18 +4,45 @@ import { CallList } from './components/calls/CallList';
 import { CallDetails } from './components/calls/CallDetails';
 import { TalkgroupFilter } from './components/talkgroups/TalkgroupFilter';
 import { LiveAudioPlayer } from './components/audio/LiveAudioPlayer';
+import { AudioQueue } from './components/audio/AudioQueue';
 import { SystemStatus } from './components/status/SystemStatus';
 import { SystemBrowser } from './components/radioreference';
 import { useCallsStore, useAudioStore } from './store';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { Routes, Route, useNavigate, useLocation, Link } from 'react-router-dom';
 
-type ViewMode = 'live' | 'browse';
+function LiveView() {
+  const { selectedCall } = useCallsStore();
+
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      {/* Left sidebar - Talkgroup filter */}
+      <aside className="w-72 border-r border-slate-700 flex flex-col bg-slate-900">
+        <TalkgroupFilter />
+      </aside>
+
+      {/* Main content - Call list */}
+      <main className="flex-1 flex flex-col bg-slate-900">
+        <CallList />
+      </main>
+
+      {/* Right sidebar - Call details */}
+      {selectedCall && (
+        <aside className="w-80 border-l border-slate-700 flex flex-col bg-slate-900">
+          <CallDetails />
+        </aside>
+      )}
+    </div>
+  );
+}
 
 function App() {
   const { enableAudio } = useWebSocket();
-  const { selectedCall } = useCallsStore();
   const { isLiveEnabled } = useAudioStore();
-  const [viewMode, setViewMode] = useState<ViewMode>('live');
+  const location = useLocation();
+
+  const isLivePage = location.pathname === '/' || location.pathname === '/live';
+  const isBrowsePage = location.pathname.startsWith('/browse');
 
   // Sync audio streaming with server
   useEffect(() => {
@@ -30,55 +57,42 @@ function App() {
           <h1 className="text-lg font-semibold text-slate-100">Radio Scanner</h1>
           {/* View toggle */}
           <div className="flex bg-slate-700 rounded-lg p-0.5">
-            <button
-              onClick={() => setViewMode('live')}
+            <Link
+              to="/"
               className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                viewMode === 'live'
+                isLivePage
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-300 hover:text-white'
               }`}
             >
               Live Scanner
-            </button>
-            <button
-              onClick={() => setViewMode('browse')}
+            </Link>
+            <Link
+              to="/browse"
               className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                viewMode === 'browse'
+                isBrowsePage
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-300 hover:text-white'
               }`}
             >
               Browse Systems
-            </button>
+            </Link>
           </div>
         </div>
         <Header />
       </header>
 
-      {viewMode === 'live' ? (
-        // Live scanner view
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left sidebar - Talkgroup filter */}
-          <aside className="w-72 border-r border-slate-700 flex flex-col bg-slate-900">
-            <TalkgroupFilter />
-          </aside>
+      <Routes>
+        <Route path="/" element={<LiveView />} />
+        <Route path="/live" element={<LiveView />} />
+        <Route path="/browse" element={<SystemBrowser />} />
+        <Route path="/browse/state/:stateId" element={<SystemBrowser />} />
+        <Route path="/browse/state/:stateId/county/:countyId" element={<SystemBrowser />} />
+        <Route path="/browse/system/:systemId" element={<SystemBrowser />} />
+      </Routes>
 
-          {/* Main content - Call list */}
-          <main className="flex-1 flex flex-col bg-slate-900">
-            <CallList />
-          </main>
-
-          {/* Right sidebar - Call details */}
-          {selectedCall && (
-            <aside className="w-80 border-l border-slate-700 flex flex-col bg-slate-900">
-              <CallDetails />
-            </aside>
-          )}
-        </div>
-      ) : (
-        // Browse systems view
-        <SystemBrowser />
-      )}
+      {/* Audio queue player (shows when live is enabled) */}
+      <AudioQueue />
 
       <SystemStatus />
 

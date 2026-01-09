@@ -11,6 +11,7 @@ import { initializeDatabase, upsertTalkgroup, insertCall, insertCallSources } fr
 import { TrunkRecorderStatusServer } from './services/trunk-recorder/status-server.js';
 import { AudioReceiver } from './services/trunk-recorder/audio-receiver.js';
 import { FileWatcher } from './services/trunk-recorder/file-watcher.js';
+import { LogWatcher } from './services/trunk-recorder/log-watcher.js';
 import { BroadcastServer } from './services/broadcast/websocket.js';
 import { callRoutes } from './routes/api/calls.js';
 import { talkgroupRoutes } from './routes/api/talkgroups.js';
@@ -50,6 +51,9 @@ async function main() {
   // Initialize file watcher for recordings
   const fileWatcher = new FileWatcher(config.trunkRecorder.audioDir);
 
+  // Initialize log watcher for control channel events
+  const logWatcher = new LogWatcher('/tmp/trunk-recorder.log');
+
   // Health check endpoint
   app.get('/api/health', async () => ({
     status: 'ok',
@@ -70,6 +74,13 @@ async function main() {
       minFrequency: config.sdr.centerFrequency - halfBandwidth,
       maxFrequency: config.sdr.centerFrequency + halfBandwidth,
     };
+  });
+
+  // Control channel events endpoint (for initial load)
+  app.get('/api/control-channel', async (request) => {
+    const { count = '100' } = request.query as { count?: string };
+    const events = await logWatcher.getRecentEvents(parseInt(count, 10));
+    return { events };
   });
 
   // Ensure Fastify is ready before creating HTTP server
@@ -208,9 +219,15 @@ async function main() {
     });
   });
 
+  // Set up log watcher event handler
+  logWatcher.on('event', (event) => {
+    broadcastServer.broadcastControlChannel(event);
+  });
+
   // Start services
   audioReceiver.start();
   fileWatcher.start();
+  logWatcher.start();
 
   // Start Fastify server
   await app.listen({ port: config.server.port, host: config.server.host });
@@ -221,6 +238,7 @@ async function main() {
   const shutdown = async () => {
     console.log('Shutting down...');
     trStatusServer.close();
+    logWatcher.stop();
     audioReceiver.stop();
     fileWatcher.stop();
     await app.close();

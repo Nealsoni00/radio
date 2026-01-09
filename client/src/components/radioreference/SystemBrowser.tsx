@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useRadioReferenceStore } from '../../store/radioreference';
 import { SearchBar } from './SearchBar';
 import { StateSelector } from './StateSelector';
@@ -6,13 +7,79 @@ import { SystemList } from './SystemList';
 import { SystemDetails } from './SystemDetails';
 
 export function SystemBrowser() {
-  const { fetchStates, fetchStats, fetchSelectedSystems, stats } = useRadioReferenceStore();
+  const { stateId, countyId, systemId } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const {
+    fetchStates,
+    fetchStats,
+    fetchSelectedSystems,
+    stats,
+    selectState,
+    selectCounty,
+    selectSystem,
+    setTypeFilter,
+    selectedStateId,
+    selectedCountyId,
+    selectedSystemId,
+    typeFilter,
+  } = useRadioReferenceStore();
 
+  // Initialize from URL on mount
   useEffect(() => {
     fetchStates();
     fetchStats();
     fetchSelectedSystems();
   }, [fetchStates, fetchStats, fetchSelectedSystems]);
+
+  // Sync URL params to store
+  useEffect(() => {
+    const urlStateId = stateId ? parseInt(stateId, 10) : null;
+    const urlCountyId = countyId ? parseInt(countyId, 10) : null;
+    const urlSystemId = systemId ? parseInt(systemId, 10) : null;
+    const urlType = searchParams.get('type') || 'P25';
+
+    // Update type filter from URL
+    if (urlType !== typeFilter) {
+      setTypeFilter(urlType);
+    }
+
+    // Update selections from URL
+    if (urlSystemId && urlSystemId !== selectedSystemId) {
+      selectSystem(urlSystemId);
+    } else if (urlStateId && urlStateId !== selectedStateId) {
+      selectState(urlStateId);
+      if (urlCountyId && urlCountyId !== selectedCountyId) {
+        selectCounty(urlCountyId);
+      }
+    }
+  }, [stateId, countyId, systemId, searchParams]);
+
+  // Update URL when store changes
+  useEffect(() => {
+    let path = '/browse';
+    const params = new URLSearchParams();
+
+    if (selectedSystemId) {
+      path = `/browse/system/${selectedSystemId}`;
+    } else if (selectedStateId) {
+      path = `/browse/state/${selectedStateId}`;
+      if (selectedCountyId) {
+        path += `/county/${selectedCountyId}`;
+      }
+    }
+
+    if (typeFilter && typeFilter !== 'P25') {
+      params.set('type', typeFilter);
+    }
+
+    const newUrl = params.toString() ? `${path}?${params.toString()}` : path;
+    const currentPath = window.location.pathname + window.location.search;
+
+    if (newUrl !== currentPath) {
+      navigate(newUrl, { replace: true });
+    }
+  }, [selectedStateId, selectedCountyId, selectedSystemId, typeFilter, navigate]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
