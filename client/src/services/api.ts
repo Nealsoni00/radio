@@ -207,3 +207,119 @@ export async function getRRStats(): Promise<{ stats: RRStats }> {
   if (!response.ok) throw new Error('Failed to fetch stats');
   return response.json();
 }
+
+// Spectrum Recording API functions
+export interface SpectrumRecording {
+  id: string;
+  name: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  centerFreq: number;
+  sampleRate: number;
+  fftSize: number;
+  minFreq: number;
+  maxFreq: number;
+  packetCount: number;
+  fileSize: number;
+}
+
+export interface RecordingStatus {
+  isRecording: boolean;
+  id?: string;
+  progress?: number;
+  elapsed?: number;
+}
+
+export interface ReplayStatus {
+  isReplaying: boolean;
+  isPaused: boolean;
+  recordingId?: string;
+  progress?: number;
+  currentPacket?: number;
+  totalPackets?: number;
+}
+
+export async function getSpectrumRecordings(): Promise<{ recordings: SpectrumRecording[] }> {
+  const response = await fetch(`${API_BASE}/spectrum/recordings`);
+  if (!response.ok) throw new Error('Failed to fetch recordings');
+  return response.json();
+}
+
+export async function getSpectrumRecordingStatus(): Promise<RecordingStatus> {
+  const response = await fetch(`${API_BASE}/spectrum/recording/status`);
+  if (!response.ok) throw new Error('Failed to fetch recording status');
+  return response.json();
+}
+
+export async function startSpectrumRecording(duration: number, name?: string): Promise<{ success: boolean; id: string }> {
+  const response = await fetch(`${API_BASE}/spectrum/recording/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ duration, name }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to start recording');
+  }
+  return response.json();
+}
+
+export async function stopSpectrumRecording(): Promise<{ success: boolean; metadata?: SpectrumRecording }> {
+  const response = await fetch(`${API_BASE}/spectrum/recording/stop`, { method: 'POST' });
+  if (!response.ok) throw new Error('Failed to stop recording');
+  return response.json();
+}
+
+export async function deleteSpectrumRecording(id: string): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/spectrum/recordings/${id}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error('Failed to delete recording');
+  return response.json();
+}
+
+export async function getSpectrumReplayStatus(): Promise<ReplayStatus> {
+  const response = await fetch(`${API_BASE}/spectrum/replay/status`);
+  if (!response.ok) throw new Error('Failed to fetch replay status');
+  return response.json();
+}
+
+export async function startSpectrumReplay(recordingId: string, loop = false): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/spectrum/replay/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recordingId, loop }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to start replay');
+  }
+  return response.json();
+}
+
+export async function stopSpectrumReplay(): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/spectrum/replay/stop`, { method: 'POST' });
+  if (!response.ok) throw new Error('Failed to stop replay');
+  return response.json();
+}
+
+export async function pauseSpectrumReplay(): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/spectrum/replay/pause`, { method: 'POST' });
+  if (!response.ok) throw new Error('Failed to pause replay');
+  return response.json();
+}
+
+export async function resumeSpectrumReplay(): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/spectrum/replay/resume`, { method: 'POST' });
+  if (!response.ok) throw new Error('Failed to resume replay');
+  return response.json();
+}
+
+export async function getSpectrumStatus(): Promise<{
+  recording: RecordingStatus;
+  replay: ReplayStatus;
+  recordings: SpectrumRecording[];
+}> {
+  const response = await fetch(`${API_BASE}/spectrum/status`);
+  if (!response.ok) throw new Error('Failed to fetch spectrum status');
+  return response.json();
+}

@@ -18,6 +18,9 @@ import { callRoutes } from './routes/api/calls.js';
 import { talkgroupRoutes } from './routes/api/talkgroups.js';
 import { audioRoutes } from './routes/api/audio.js';
 import { radioReferenceRoutes } from './routes/api/radioreference.js';
+import { spectrumRoutes } from './routes/api/spectrum.js';
+import { FFTRecorder } from './services/spectrum/fft-recorder.js';
+import { FFTReplayer } from './services/spectrum/fft-replayer.js';
 import type { TRCallStart, TRCallEnd } from './types/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -74,12 +77,6 @@ async function main() {
     prefix: '/',
   });
 
-  // Register API routes
-  await app.register(callRoutes);
-  await app.register(talkgroupRoutes);
-  await app.register(audioRoutes);
-  await app.register(radioReferenceRoutes);
-
   // Initialize trunk-recorder status server (trunk-recorder connects to us)
   const trStatusServer = new TrunkRecorderStatusServer(3001);
 
@@ -89,11 +86,22 @@ async function main() {
   // Initialize FFT receiver for spectrum visualization
   const fftReceiver = new FFTReceiver(config.trunkRecorder.fftPort);
 
+  // Initialize FFT recording and replay services
+  const fftRecorder = new FFTRecorder();
+  const fftReplayer = new FFTReplayer(fftRecorder);
+
   // Initialize file watcher for recordings
   const fileWatcher = new FileWatcher(config.trunkRecorder.audioDir);
 
   // Initialize log watcher for control channel events
   const logWatcher = new LogWatcher('/tmp/trunk-recorder.log');
+
+  // Register API routes
+  await app.register(callRoutes);
+  await app.register(talkgroupRoutes);
+  await app.register(audioRoutes);
+  await app.register(radioReferenceRoutes);
+  await app.register(spectrumRoutes({ recorder: fftRecorder, replayer: fftReplayer }));
 
   // Health check endpoint
   app.get('/api/health', async () => ({
@@ -200,6 +208,14 @@ async function main() {
   });
 
   fftReceiver.on('fft', (packet) => {
+    // Broadcast live FFT to clients
+    broadcastServer.broadcastFFT(packet);
+    // Also record if recording is active
+    fftRecorder.addPacket(packet);
+  });
+
+  // Replayer broadcasts recorded FFT packets
+  fftReplayer.on('fft', (packet) => {
     broadcastServer.broadcastFFT(packet);
   });
 

@@ -4,6 +4,7 @@ import { useConnectionStore } from '../../store';
 import { SpectrumDisplay } from './SpectrumDisplay';
 import { WaterfallDisplay } from './WaterfallDisplay';
 import { SpectrumControls } from './SpectrumControls';
+import { SpectrumRecorder } from './SpectrumRecorder';
 
 interface SpectrumPanelProps {
   onEnableChange?: (enabled: boolean) => void;
@@ -81,47 +82,52 @@ export function SpectrumPanel({ onEnableChange }: SpectrumPanelProps) {
                 <WaterfallDisplay height={200} />
               </div>
             )}
-            <SpectrumControls />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <SpectrumControls />
+              <SpectrumRecorder />
+            </div>
           </>
         ) : (
-          <div className="h-[400px] flex items-center justify-center text-slate-500 bg-slate-800/50 rounded-lg">
-            <div className="text-center max-w-md">
-              <div className="text-4xl mb-3 animate-pulse">📡</div>
-              <p className="text-slate-300 font-medium mb-2">Waiting for spectrum data...</p>
-              {waitingTime > 3 && (
-                <div className="text-sm space-y-2 mt-4">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-                    <span>WebSocket: {isConnected ? 'Connected' : 'Disconnected'}</span>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="h-[300px] flex items-center justify-center text-slate-500 bg-slate-800/50 rounded-lg">
+              <div className="text-center max-w-md p-4">
+                <div className="text-4xl mb-3 animate-pulse">📡</div>
+                <p className="text-slate-300 font-medium mb-2">Waiting for spectrum data...</p>
+                {waitingTime > 3 && (
+                  <div className="text-sm space-y-2 mt-4">
+                    <div className="flex items-center justify-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                      <span>WebSocket: {isConnected ? 'Connected' : 'Disconnected'}</span>
+                    </div>
+                    <div className="flex items-center justify-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${trunkRecorderConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                      <span>Trunk-Recorder: {trunkRecorderConnected ? 'Connected' : 'Not connected'}</span>
+                    </div>
+                    {!trunkRecorderConnected && (
+                      <p className="text-slate-500 mt-3 text-xs">
+                        FFT streaming requires trunk-recorder with the fftstream plugin.
+                        Or replay a saved recording below.
+                      </p>
+                    )}
                   </div>
-                  <div className="flex items-center justify-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${trunkRecorderConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
-                    <span>Trunk-Recorder: {trunkRecorderConnected ? 'Connected' : 'Not connected'}</span>
-                  </div>
-                  {!trunkRecorderConnected && (
-                    <p className="text-slate-500 mt-3">
-                      FFT streaming requires trunk-recorder running with the <code className="bg-slate-700 px-1 rounded">fftstream</code> plugin configured to send data to UDP port 9001.
-                    </p>
-                  )}
-                  {trunkRecorderConnected && (
-                    <p className="text-slate-500 mt-3">
-                      Trunk-recorder is connected but not sending FFT data. Make sure the <code className="bg-slate-700 px-1 rounded">fftstream</code> plugin is enabled in your config.
-                    </p>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
+            <SpectrumRecorder />
           </div>
         )
       ) : (
-        <div className="h-[400px] flex items-center justify-center text-slate-500 bg-slate-800/50 rounded-lg">
-          <div className="text-center">
-            <div className="text-4xl mb-2">📡</div>
-            <p>Click Start to view real-time spectrum</p>
-            <p className="text-sm text-slate-600 mt-1">
-              Requires trunk-recorder with fftstream plugin
-            </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="h-[300px] flex items-center justify-center text-slate-500 bg-slate-800/50 rounded-lg">
+            <div className="text-center">
+              <div className="text-4xl mb-2">📡</div>
+              <p>Click Start to view real-time spectrum</p>
+              <p className="text-sm text-slate-600 mt-1">
+                Or replay a saved recording
+              </p>
+            </div>
           </div>
+          <SpectrumRecorder />
         </div>
       )}
     </div>
