@@ -3,6 +3,7 @@ import { writeFileSync, mkdirSync, existsSync, readdirSync, readFileSync, unlink
 import { join, dirname } from 'path';
 import { config } from '../../config/index.js';
 import type { FFTPacket } from '../trunk-recorder/fft-receiver.js';
+import type { ControlChannelEvent } from '../trunk-recorder/log-watcher.js';
 
 export interface RecordingMetadata {
   id: string;
@@ -17,6 +18,10 @@ export interface RecordingMetadata {
   maxFreq: number;
   packetCount: number;
   fileSize: number;
+  // Control channel and transmission stats
+  controlChannelEvents: number;
+  transmissions: number;
+  uniqueTalkgroups: number;
 }
 
 interface RecordedPacket {
@@ -25,9 +30,19 @@ interface RecordedPacket {
   magnitudes: number[];
 }
 
+interface RecordedControlChannelEvent {
+  relativeTime: number;
+  type: string;
+  talkgroup?: number;
+  talkgroupTag?: string;
+  frequency?: number;
+  message: string;
+}
+
 interface RecordingFile {
   metadata: RecordingMetadata;
   packets: RecordedPacket[];
+  controlChannelEvents: RecordedControlChannelEvent[];
 }
 
 export class FFTRecorder extends EventEmitter {
@@ -36,6 +51,9 @@ export class FFTRecorder extends EventEmitter {
   private recordingDuration = 0;
   private recordingTimeout: NodeJS.Timeout | null = null;
   private packets: RecordedPacket[] = [];
+  private controlChannelEvents: RecordedControlChannelEvent[] = [];
+  private transmissionCount = 0;
+  private talkgroupsSeen: Set<number> = new Set();
   private currentMetadata: Partial<RecordingMetadata> = {};
   private recordingsDir: string;
 
@@ -66,6 +84,9 @@ export class FFTRecorder extends EventEmitter {
     this.recordingStartTime = Date.now();
     this.recordingDuration = durationSeconds * 1000;
     this.packets = [];
+    this.controlChannelEvents = [];
+    this.transmissionCount = 0;
+    this.talkgroupsSeen = new Set();
     this.currentMetadata = {
       id: recordingId,
       name: name || `Recording ${new Date().toLocaleString()}`,
@@ -119,18 +140,30 @@ export class FFTRecorder extends EventEmitter {
       maxFreq: this.currentMetadata.maxFreq || 0,
       packetCount: this.packets.length,
       fileSize: 0,
+      controlChannelEvents: this.controlChannelEvents.length,
+      transmissions: this.transmissionCount,
+      uniqueTalkgroups: this.talkgroupsSeen.size,
     };
 
-    // Save to file
+    // Save to file - calculate size first, then include in metadata
+    const tempRecording = {
+      metadata: { ...metadata, fileSize: 0 },
+      packets: this.packets,
+      controlChannelEvents: this.controlChannelEvents,
+    };
+    // Estimate size by serializing without metadata.fileSize
+    const estimatedSize = JSON.stringify(tempRecording).length;
+    metadata.fileSize = estimatedSize;
+
     const recording: RecordingFile = {
       metadata,
       packets: this.packets,
+      controlChannelEvents: this.controlChannelEvents,
     };
 
     const filePath = join(this.recordingsDir, `${metadata.id}.json`);
     const jsonData = JSON.stringify(recording);
     writeFileSync(filePath, jsonData);
-    metadata.fileSize = jsonData.length;
 
     console.log(`FFT recording saved: ${filePath} (${this.packets.length} packets, ${(metadata.fileSize / 1024).toFixed(1)} KB)`);
     this.emit('recordingStopped', { id: metadata.id, success: true, metadata });
@@ -172,6 +205,32 @@ export class FFTRecorder extends EventEmitter {
         elapsed: relativeTime,
       });
     }
+  }
+
+  /**
+   * Add a control channel event to the current recording
+   */
+  addControlChannelEvent(event: ControlChannelEvent): void {
+    if (!this.isRecording) return;
+
+    const relativeTime = Date.now() - this.recordingStartTime;
+
+    // Track talkgroups and transmissions
+    if (event.talkgroup) {
+      this.talkgroupsSeen.add(event.talkgroup);
+    }
+    if (event.type === 'grant') {
+      this.transmissionCount++;
+    }
+
+    this.controlChannelEvents.push({
+      relativeTime,
+      type: event.type,
+      talkgroup: event.talkgroup,
+      talkgroupTag: event.talkgroupTag,
+      frequency: event.frequency,
+      message: event.message,
+    });
   }
 
   /**

@@ -244,6 +244,8 @@ async function main() {
   // Set up log watcher event handler
   logWatcher.on('event', (event) => {
     broadcastServer.broadcastControlChannel(event);
+    // Also record control channel events if recording
+    fftRecorder.addControlChannelEvent(event);
   });
 
   // Start services

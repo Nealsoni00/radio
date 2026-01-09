@@ -289,10 +289,19 @@ export function SpectrumRecorder() {
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-slate-200 truncate">{rec.name}</div>
-                  <div className="text-xs text-slate-400 flex gap-2">
+                  <div className="text-xs text-slate-400 flex flex-wrap gap-x-2 gap-y-0.5">
                     <span>{formatDuration(rec.duration)}</span>
                     <span>{formatFrequency(rec.centerFreq)}</span>
                     <span>{formatFileSize(rec.fileSize)}</span>
+                    {rec.transmissions !== undefined && rec.transmissions > 0 && (
+                      <span className="text-green-400">{rec.transmissions} TX</span>
+                    )}
+                    {rec.uniqueTalkgroups !== undefined && rec.uniqueTalkgroups > 0 && (
+                      <span className="text-blue-400">{rec.uniqueTalkgroups} TG</span>
+                    )}
+                    {rec.controlChannelEvents !== undefined && rec.controlChannelEvents > 0 && (
+                      <span className="text-yellow-400">{rec.controlChannelEvents} CC</span>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-1 ml-2">

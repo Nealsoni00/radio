@@ -208,6 +208,15 @@ export async function getRRStats(): Promise<{ stats: RRStats }> {
   return response.json();
 }
 
+export async function getRRGeographyCounts(): Promise<{
+  byState: Record<number, number>;
+  byCounty: Record<number, number>;
+}> {
+  const response = await fetch(`${API_BASE}/rr/geography-counts`);
+  if (!response.ok) throw new Error('Failed to fetch geography counts');
+  return response.json();
+}
+
 // Spectrum Recording API functions
 export interface SpectrumRecording {
   id: string;
@@ -222,6 +231,10 @@ export interface SpectrumRecording {
   maxFreq: number;
   packetCount: number;
   fileSize: number;
+  // Control channel and transmission stats
+  controlChannelEvents?: number;
+  transmissions?: number;
+  uniqueTalkgroups?: number;
 }
 
 export interface RecordingStatus {
