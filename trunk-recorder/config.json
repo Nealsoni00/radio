@@ -1,0 +1,43 @@
+{
+  "ver": 2,
+  "sources": [
+    {
+      "center": 771500000,
+      "rate": 2400000,
+      "error": 0,
+      "gain": 40,
+      "ppm": 0,
+      "digitalRecorders": 4,
+      "analogRecorders": 0,
+      "driver": "osmosdr",
+      "device": "rtl=0"
+    }
+  ],
+  "systems": [
+    {
+      "shortName": "rwc",
+      "type": "p25",
+      "talkgroupsFile": "rwc-talkgroups.csv",
+      "unitTagsFile": "rwc-units.csv",
+      "modulation": "qpsk",
+      "control_channels": [
+        770106250,
+        770356250,
+        772106250,
+        772356250
+      ],
+      "callLog": true,
+      "audioArchive": true,
+      "recordUnknown": false,
+      "minDuration": 1,
+      "compressWav": false
+    }
+  ],
+  "captureDir": "./audio",
+  "tempDir": "/tmp/trunk-recorder",
+  "uploadServer": "",
+  "callTimeout": 3,
+  "logLevel": "info",
+  "statusServer": "ws://127.0.0.1:3001",
+  "audioStreaming": false
+}

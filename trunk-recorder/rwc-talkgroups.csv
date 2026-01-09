@@ -1,0 +1,79 @@
+Decimal,Hex,Alpha Tag,Mode,Description,Tag,Category
+2001,7D1,PHX PD A1,D,Phoenix Police A1 (Encrypted),Law Dispatch,Phoenix Police
+2011,7DB,PHX PD A2,D,Phoenix Police Precinct A2,Law Dispatch,Phoenix Police
+2021,7E5,PHX PD A3,D,Phoenix Police Precinct A3,Law Dispatch,Phoenix Police
+2031,7EF,PHX PD A4,D,Phoenix Police Precinct A4,Law Dispatch,Phoenix Police
+2041,7F9,PHX PD A5,D,Phoenix Police Precinct A5,Law Dispatch,Phoenix Police
+2051,803,PHX PD A6,D,Phoenix Police Precinct A6,Law Dispatch,Phoenix Police
+2061,80D,PHX PD A7,D,Phoenix Police Precinct A7,Law Dispatch,Phoenix Police
+2071,817,PHX PD A8,D,Phoenix Police Precinct A8,Law Dispatch,Phoenix Police
+2081,821,PHX PD A9,D,Phoenix Police Precinct A9,Law Dispatch,Phoenix Police
+2101,835,PHX PD Tac 1,D,Phoenix Police Tactical 1,Law Tac,Phoenix Police
+2102,836,PHX PD Tac 2,D,Phoenix Police Tactical 2,Law Tac,Phoenix Police
+2103,837,PHX PD Tac 3,D,Phoenix Police Tactical 3,Law Tac,Phoenix Police
+2104,838,PHX PD Tac 4,D,Phoenix Police Tactical 4,Law Tac,Phoenix Police
+2105,839,PHX PD Tac 5,D,Phoenix Police Tactical 5,Law Tac,Phoenix Police
+2111,83F,PHX PD Det,D,Phoenix Police Detectives,Law Talk,Phoenix Police
+2121,849,PHX PD Traffic,D,Phoenix Police Traffic,Law Tac,Phoenix Police
+2131,853,PHX PD Air,D,Phoenix Police Air Unit,Law Tac,Phoenix Police
+2811,AFC,PHX FD A1 Disp,D,Phoenix Fire Dispatch A1,Fire Dispatch,Phoenix Fire
+2812,AFD,PHX FD A2,D,Phoenix Fire Operations A2,Fire-Tac,Phoenix Fire
+2813,AFE,PHX FD A3,D,Phoenix Fire Operations A3,Fire-Tac,Phoenix Fire
+2814,AFF,PHX FD A4,D,Phoenix Fire Operations A4,Fire-Tac,Phoenix Fire
+2815,B00,PHX FD A5,D,Phoenix Fire Operations A5,Fire-Tac,Phoenix Fire
+2816,B01,PHX FD A6,D,Phoenix Fire Operations A6,Fire-Tac,Phoenix Fire
+2817,B02,PHX FD A7,D,Phoenix Fire Operations A7,Fire-Tac,Phoenix Fire
+2818,B03,PHX FD A8,D,Phoenix Fire Operations A8,Fire-Tac,Phoenix Fire
+2819,B04,PHX FD A9,D,Phoenix Fire Operations A9,Fire-Tac,Phoenix Fire
+2820,B05,PHX FD A10,D,Phoenix Fire Operations A10,Fire-Tac,Phoenix Fire
+2821,B06,PHX FD A11,D,Phoenix Fire Operations A11,Fire-Tac,Phoenix Fire
+2822,B07,PHX FD A12,D,Phoenix Fire Operations A12,Fire-Tac,Phoenix Fire
+2831,B10,PHX FD Cmd,D,Phoenix Fire Command,Fire-Tac,Phoenix Fire
+2841,B1A,PHX FD EMS,D,Phoenix Fire EMS Operations,EMS-Tac,Phoenix Fire
+2851,B24,PHX FD Haz,D,Phoenix Fire Hazmat,Fire-Tac,Phoenix Fire
+3011,BC3,CHAN PD Disp,D,Chandler Police Dispatch,Law Dispatch,Chandler
+3021,BCD,CHAN PD Tac1,D,Chandler Police Tactical 1,Law Tac,Chandler
+3022,BCE,CHAN PD Tac2,D,Chandler Police Tactical 2,Law Tac,Chandler
+3031,BD7,CHAN PD Det,D,Chandler Police Detectives,Law Talk,Chandler
+3811,EE3,CHAN FD Disp,D,Chandler Fire Dispatch,Fire Dispatch,Chandler
+3812,EE4,CHAN FD Tac1,D,Chandler Fire Tactical 1,Fire-Tac,Chandler
+3813,EE5,CHAN FD Tac2,D,Chandler Fire Tactical 2,Fire-Tac,Chandler
+4011,FAB,TEMP PD Disp,D,Tempe Police Dispatch,Law Dispatch,Tempe
+4021,FB5,TEMP PD Tac1,D,Tempe Police Tactical 1,Law Tac,Tempe
+4022,FB6,TEMP PD Tac2,D,Tempe Police Tactical 2,Law Tac,Tempe
+4811,12CB,TEMP FD Disp,D,Tempe Fire Dispatch,Fire Dispatch,Tempe
+4812,12CC,TEMP FD Tac1,D,Tempe Fire Tactical 1,Fire-Tac,Tempe
+5011,138B,SCOTT PD Disp,D,Scottsdale Police Dispatch,Law Dispatch,Scottsdale
+5021,1395,SCOTT PD Tac1,D,Scottsdale Police Tactical 1,Law Tac,Scottsdale
+5022,1396,SCOTT PD Tac2,D,Scottsdale Police Tactical 2,Law Tac,Scottsdale
+5811,16B3,SCOTT FD Disp,D,Scottsdale Fire Dispatch,Fire Dispatch,Scottsdale
+5812,16B4,SCOTT FD Tac1,D,Scottsdale Fire Tactical 1,Fire-Tac,Scottsdale
+6011,177B,GLEN PD Disp,D,Glendale Police Dispatch,Law Dispatch,Glendale
+6021,1785,GLEN PD Tac1,D,Glendale Police Tactical 1,Law Tac,Glendale
+6811,1A9B,GLEN FD Disp,D,Glendale Fire Dispatch,Fire Dispatch,Glendale
+6812,1A9C,GLEN FD Tac1,D,Glendale Fire Tactical 1,Fire-Tac,Glendale
+7011,1B63,PEOR PD Disp,D,Peoria Police Dispatch,Law Dispatch,Peoria
+7021,1B6D,PEOR PD Tac1,D,Peoria Police Tactical 1,Law Tac,Peoria
+7811,1E83,PEOR FD Disp,D,Peoria Fire Dispatch,Fire Dispatch,Peoria
+8001,1F41,GILA FD,D,Gila River Fire Dispatch,Fire Dispatch,Gila River
+8011,1F4B,SURP PD Disp,D,Surprise Police Dispatch,Law Dispatch,Surprise
+8021,1F55,SURP PD Tac1,D,Surprise Police Tactical 1,Law Tac,Surprise
+8811,226B,SURP FD Disp,D,Surprise Fire Dispatch,Fire Dispatch,Surprise
+9011,2333,AVON PD Disp,D,Avondale Police Dispatch,Law Dispatch,Avondale
+9021,233D,AVON PD Tac1,D,Avondale Police Tactical 1,Law Tac,Avondale
+9811,2653,AVON FD Disp,D,Avondale Fire Dispatch,Fire Dispatch,Avondale
+10011,271B,GOOD PD Disp,D,Goodyear Police Dispatch,Law Dispatch,Goodyear
+10021,2725,GOOD PD Tac1,D,Goodyear Police Tactical 1,Law Tac,Goodyear
+10811,2A3B,GOOD FD Disp,D,Goodyear Fire Dispatch,Fire Dispatch,Goodyear
+11011,2B03,BUCK PD Disp,D,Buckeye Police Dispatch,Law Dispatch,Buckeye
+11811,2E23,BUCK FD Disp,D,Buckeye Fire Dispatch,Fire Dispatch,Buckeye
+12011,2EEB,TOLL PD Disp,D,Tolleson Police Dispatch,Law Dispatch,Tolleson
+12811,320B,TOLL FD Disp,D,Tolleson Fire Dispatch,Fire Dispatch,Tolleson
+13011,32D3,PV PD Disp,D,Paradise Valley Police Dispatch,Law Dispatch,Paradise Valley
+14011,36BB,ELMIR PD Disp,D,El Mirage Police Dispatch,Law Dispatch,El Mirage
+15011,3AA3,WICK PD Disp,D,Wickenburg Police Dispatch,Law Dispatch,Wickenburg
+15811,3DC3,WICK FD Disp,D,Wickenburg Fire Dispatch,Fire Dispatch,Wickenburg
+50001,C351,Interop 1,D,Interoperability Channel 1,Interop,Interop
+50002,C352,Interop 2,D,Interoperability Channel 2,Interop,Interop
+50003,C353,Interop 3,D,Interoperability Channel 3,Interop,Interop
+50004,C354,Interop 4,D,Interoperability Channel 4,Interop,Interop
