@@ -194,9 +194,9 @@ export function SpectrumRecorder() {
               <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
               <span className="text-sm text-red-400">Recording...</span>
               <span className="text-xs text-slate-400">
-                {recordingStatus.progress !== undefined
-                  ? `${Math.round(recordingStatus.progress * 100)}%`
-                  : ''}
+                {recordingStatus.elapsed !== undefined && formatDuration(recordingStatus.elapsed)}
+                {recordingStatus.progress !== undefined && recordingStatus.elapsed !== undefined && ' • '}
+                {recordingStatus.progress !== undefined && `${Math.round(recordingStatus.progress * 100)}%`}
               </span>
             </div>
             <div className="w-full bg-slate-700 rounded-full h-1.5">
