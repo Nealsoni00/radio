@@ -2,3 +2,15 @@ node_modules/
 .DS_Store
 *.log
 .env
+
+# Audio recordings (can be large)
+trunk-recorder/audio/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+server/data/
+
+# Build artifacts
+dist/
