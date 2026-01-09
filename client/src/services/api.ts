@@ -217,6 +217,40 @@ export async function getRRGeographyCounts(): Promise<{
   return response.json();
 }
 
+// Control channel scanning
+export interface ControlChannelScanResult {
+  frequency: number;
+  systemId: number;
+  systemName: string;
+  systemType: string;
+  siteName: string;
+  isPrimary: boolean;
+  nac?: string;
+  wacn?: string;
+}
+
+export async function getControlChannelsForCounty(countyId: number): Promise<{
+  controlChannels: ControlChannelScanResult[];
+  county: RRCounty;
+  total: number;
+  uniqueSystems: number;
+}> {
+  const response = await fetch(`${API_BASE}/rr/counties/${countyId}/control-channels`);
+  if (!response.ok) throw new Error('Failed to fetch control channels');
+  return response.json();
+}
+
+export async function getControlChannelsForState(stateId: number): Promise<{
+  controlChannels: ControlChannelScanResult[];
+  state: RRState;
+  total: number;
+  uniqueSystems: number;
+}> {
+  const response = await fetch(`${API_BASE}/rr/states/${stateId}/control-channels`);
+  if (!response.ok) throw new Error('Failed to fetch control channels');
+  return response.json();
+}
+
 // Spectrum Recording API functions
 export interface SpectrumRecording {
   id: string;

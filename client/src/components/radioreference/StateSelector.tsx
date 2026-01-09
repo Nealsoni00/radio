@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useRadioReferenceStore } from '../../store/radioreference';
+import { ControlChannelScanner } from './ControlChannelScanner';
 
 export function StateSelector() {
   const {
@@ -11,8 +13,11 @@ export function StateSelector() {
     typeFilter,
     setTypeFilter,
     selectedSystems,
+    selectSystem,
     isLoading,
   } = useRadioReferenceStore();
+
+  const [showScanner, setShowScanner] = useState(false);
 
   return (
     <div className="p-3 space-y-4">
@@ -68,6 +73,19 @@ export function StateSelector() {
         </div>
       )}
 
+      {/* Scan for Control Channels button */}
+      {(selectedCountyId || selectedStateId) && (
+        <button
+          onClick={() => setShowScanner(true)}
+          className="w-full px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-md text-sm font-medium flex items-center justify-center gap-2"
+        >
+          <span>Scan for Systems</span>
+          <span className="text-xs opacity-75">
+            ({selectedCountyId ? 'County' : 'State'})
+          </span>
+        </button>
+      )}
+
       {/* Selected systems */}
       {selectedSystems.length > 0 && (
         <div>
@@ -93,6 +111,19 @@ export function StateSelector() {
       {/* Loading indicator */}
       {isLoading && (
         <div className="text-center text-sm text-slate-400 py-2">Loading...</div>
+      )}
+
+      {/* Control Channel Scanner Modal */}
+      {showScanner && (
+        <ControlChannelScanner
+          countyId={selectedCountyId}
+          stateId={!selectedCountyId ? selectedStateId : null}
+          onClose={() => setShowScanner(false)}
+          onSelectSystem={(systemId) => {
+            selectSystem(systemId);
+            setShowScanner(false);
+          }}
+        />
       )}
     </div>
   );

@@ -15,6 +15,9 @@ import {
   addSelectedSystem,
   removeSelectedSystem,
   getSystemStats,
+  getSystemCountsByGeography,
+  getControlChannelsForCounty,
+  getControlChannelsForState,
 } from '../../db/radioreference.js';
 
 export async function radioReferenceRoutes(app: FastifyInstance): Promise<void> {
@@ -172,6 +175,32 @@ export async function radioReferenceRoutes(app: FastifyInstance): Promise<void> 
     return { success: true };
   });
 
+  // Get control channels for scanning in a county
+  app.get<{ Params: { id: string } }>('/api/rr/counties/:id/control-channels', async (request) => {
+    const countyId = parseInt(request.params.id, 10);
+    const controlChannels = getControlChannelsForCounty(countyId);
+    const county = getCounty(countyId);
+    return {
+      controlChannels,
+      county,
+      total: controlChannels.length,
+      uniqueSystems: new Set(controlChannels.map(c => c.systemId)).size,
+    };
+  });
+
+  // Get control channels for scanning in a state
+  app.get<{ Params: { id: string } }>('/api/rr/states/:id/control-channels', async (request) => {
+    const stateId = parseInt(request.params.id, 10);
+    const controlChannels = getControlChannelsForState(stateId);
+    const state = getState(stateId);
+    return {
+      controlChannels,
+      state,
+      total: controlChannels.length,
+      uniqueSystems: new Set(controlChannels.map(c => c.systemId)).size,
+    };
+  });
+
   // Generate trunk-recorder config
   app.get('/api/rr/generate-config', async () => {
     const selectedSystems = getSelectedSystems();
@@ -257,5 +286,11 @@ export async function radioReferenceRoutes(app: FastifyInstance): Promise<void> 
   app.get('/api/rr/stats', async () => {
     const stats = getSystemStats();
     return { stats };
+  });
+
+  // Get system counts by geography (for map highlighting)
+  app.get('/api/rr/geography-counts', async () => {
+    const counts = getSystemCountsByGeography();
+    return counts;
   });
 }

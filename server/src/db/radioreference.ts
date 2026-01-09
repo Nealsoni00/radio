@@ -519,10 +519,114 @@ export function getSystemStats(): { totalSystems: number; totalTalkgroups: numbe
   return stats;
 }
 
+// Get system counts grouped by state and county
+export function getSystemCountsByGeography(): {
+  byState: Record<number, number>;
+  byCounty: Record<number, number>;
+} {
+  // Count systems by state
+  const stateRows = db.prepare(`
+    SELECT state_id, COUNT(*) as count
+    FROM rr_systems
+    WHERE state_id IS NOT NULL
+    GROUP BY state_id
+  `).all() as { state_id: number; count: number }[];
+
+  const byState: Record<number, number> = {};
+  for (const row of stateRows) {
+    byState[row.state_id] = row.count;
+  }
+
+  // Count systems by county
+  const countyRows = db.prepare(`
+    SELECT county_id, COUNT(*) as count
+    FROM rr_systems
+    WHERE county_id IS NOT NULL
+    GROUP BY county_id
+  `).all() as { county_id: number; count: number }[];
+
+  const byCounty: Record<number, number> = {};
+  for (const row of countyRows) {
+    byCounty[row.county_id] = row.count;
+  }
+
+  return { byState, byCounty };
+}
+
+// Get control channels for systems in a county (for scanning)
+export interface ControlChannelScanResult {
+  frequency: number;
+  systemId: number;
+  systemName: string;
+  systemType: string;
+  siteName: string;
+  isPrimary: boolean;
+  nac?: string;
+  wacn?: string;
+}
+
+export function getControlChannelsForCounty(countyId: number): ControlChannelScanResult[] {
+  // Get control channels from systems in this county, or sites in this county
+  return db.prepare(`
+    SELECT DISTINCT
+      f.frequency,
+      s.id as systemId,
+      s.name as systemName,
+      s.type as systemType,
+      si.name as siteName,
+      f.is_primary as isPrimary,
+      s.nac,
+      s.wacn
+    FROM rr_frequencies f
+    JOIN rr_sites si ON f.site_id = si.id
+    JOIN rr_systems s ON f.system_id = s.id
+    WHERE f.channel_type = 'control'
+      AND (s.county_id = ? OR si.county_id = ?)
+    ORDER BY f.frequency
+  `).all(countyId, countyId) as ControlChannelScanResult[];
+}
+
+// Get control channels for systems in a state (for broader scanning)
+export function getControlChannelsForState(stateId: number): ControlChannelScanResult[] {
+  return db.prepare(`
+    SELECT DISTINCT
+      f.frequency,
+      s.id as systemId,
+      s.name as systemName,
+      s.type as systemType,
+      si.name as siteName,
+      f.is_primary as isPrimary,
+      s.nac,
+      s.wacn
+    FROM rr_frequencies f
+    JOIN rr_sites si ON f.site_id = si.id
+    JOIN rr_systems s ON f.system_id = s.id
+    WHERE f.channel_type = 'control'
+      AND s.state_id = ?
+    ORDER BY f.frequency
+  `).all(stateId) as ControlChannelScanResult[];
+}
+
 // Rebuild search index
 export function rebuildSearchIndex(): void {
-  // Clear existing index
-  db.exec('DELETE FROM rr_search');
+  // Drop and recreate the contentless FTS5 table (can't DELETE from contentless tables)
+  db.exec('DROP TABLE IF EXISTS rr_search');
+  db.exec(`
+    CREATE VIRTUAL TABLE rr_search USING fts5(
+      system_name,
+      system_type,
+      talkgroup_alpha_tag,
+      talkgroup_description,
+      category,
+      tag,
+      state_name,
+      state_abbrev,
+      county_name,
+      city,
+      content='',
+      tokenize='trigram'
+    )
+  `);
 
   // Rebuild from systems and talkgroups
   db.exec(`
