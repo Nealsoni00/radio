@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
-import { useControlChannelStore, useCallsStore, useAudioStore } from '../../store';
+import { useEffect, useRef, useState } from 'react';
+import { useControlChannelStore, useCallsStore } from '../../store';
 import { getControlChannelEvents } from '../../services/api';
-import type { ControlChannelEvent } from '../../types';
+import { WaveformPlayer } from '../audio/WaveformPlayer';
+import type { ControlChannelEvent, Call } from '../../types';
 
 function getEventTypeColor(type: ControlChannelEvent['type']): string {
   switch (type) {
@@ -53,6 +54,31 @@ function getEventTypeBadge(type: ControlChannelEvent['type']): string {
   }
 }
 
+function getEventTypeLabel(type: ControlChannelEvent['type']): string {
+  switch (type) {
+    case 'grant':
+      return 'GRANT';
+    case 'update':
+      return 'UPDATE';
+    case 'end':
+      return 'END';
+    case 'encrypted':
+      return 'ENCRYPT';
+    case 'out_of_band':
+      return 'OOB';
+    case 'no_recorder':
+      return 'NO REC';
+    case 'decode_rate':
+      return 'RATE';
+    case 'system_info':
+      return 'SYSTEM';
+    case 'unit':
+      return 'UNIT';
+    default:
+      return type.toUpperCase().slice(0, 6);
+  }
+}
+
 function formatFrequency(freq?: number): string {
   if (!freq) return '';
   return `${(freq / 1000000).toFixed(4)} MHz`;
@@ -68,44 +94,84 @@ function formatTimestamp(timestamp: string): string {
   });
 }
 
-interface EventRowProps {
-  event: ControlChannelEvent;
-  onPlayTalkgroup?: (talkgroupId: number) => void;
-  hasRecording?: boolean;
+function formatDuration(seconds: number | undefined | null): string {
+  if (seconds == null) return '';
+  const secs = Math.round(seconds);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const remainingSecs = secs % 60;
+  return `${mins}:${remainingSecs.toString().padStart(2, '0')}`;
 }
 
-function EventRow({ event, onPlayTalkgroup, hasRecording }: EventRowProps) {
-  const isClickable = event.talkgroup && onPlayTalkgroup && (event.type === 'grant' || event.type === 'end' || event.type === 'update');
+interface EventRowProps {
+  event: ControlChannelEvent;
+  recording?: Call | null;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
+  onPlaybackEnded?: () => void;
+}
+
+function EventRow({ event, recording, isExpanded, onToggleExpand, onPlaybackEnded }: EventRowProps) {
+  const hasRecording = !!recording?.audio_file;
+  const isClickable = hasRecording && (event.type === 'grant' || event.type === 'end' || event.type === 'update');
 
   const handleClick = () => {
-    if (isClickable && event.talkgroup) {
-      onPlayTalkgroup(event.talkgroup);
+    if (isClickable && onToggleExpand) {
+      onToggleExpand();
     }
   };
 
   return (
-    <div
-      className={`flex items-start gap-2 px-3 py-1 hover:bg-slate-800/50 border-b border-slate-800 text-xs ${
-        isClickable ? 'cursor-pointer' : ''
-      }`}
-      onClick={handleClick}
-    >
-      <span className="text-slate-500 font-mono w-14 flex-shrink-0">
-        {formatTimestamp(event.timestamp)}
-      </span>
-      <span
-        className={`px-1 py-0.5 rounded text-xs font-medium w-16 text-center flex-shrink-0 ${getEventTypeBadge(
-          event.type
-        )}`}
+    <div className="border-b border-slate-800">
+      <div
+        className={`flex items-start gap-2 px-3 py-1 hover:bg-slate-800/50 text-xs ${
+          isClickable ? 'cursor-pointer' : ''
+        } ${isExpanded ? 'bg-slate-800/70' : ''}`}
+        onClick={handleClick}
       >
-        {event.type.toUpperCase()}
-      </span>
-      <span className={`flex-1 font-mono truncate ${getEventTypeColor(event.type)}`}>{event.message}</span>
-      {event.frequency && (
-        <span className="text-slate-500 font-mono text-xs flex-shrink-0">{formatFrequency(event.frequency)}</span>
-      )}
-      {isClickable && hasRecording && (
-        <span className="text-blue-400 text-xs flex-shrink-0" title="Click to play recording">▶</span>
+        <span className="text-slate-500 font-mono w-14 flex-shrink-0">
+          {formatTimestamp(event.timestamp)}
+        </span>
+        <span
+          className={`px-1.5 py-0.5 rounded text-xs font-medium w-14 text-center flex-shrink-0 ${getEventTypeBadge(
+            event.type
+          )}`}
+          title={event.type.replace('_', ' ')}
+        >
+          {getEventTypeLabel(event.type)}
+        </span>
+        <span className={`flex-1 font-mono truncate ${getEventTypeColor(event.type)}`}>{event.message}</span>
+        {recording?.duration != null && (
+          <span className="text-slate-400 font-mono text-xs flex-shrink-0 bg-slate-700/50 px-1 rounded">
+            {formatDuration(recording.duration)}
+          </span>
+        )}
+        {event.frequency && (
+          <span className="text-slate-500 font-mono text-xs flex-shrink-0">{formatFrequency(event.frequency)}</span>
+        )}
+        {isClickable && (
+          <span className={`text-xs flex-shrink-0 transition-transform ${isExpanded ? 'text-blue-300' : 'text-blue-400'}`} title="Click to play recording">
+            {isExpanded ? '▼' : '▶'}
+          </span>
+        )}
+      </div>
+
+      {/* Expanded waveform player */}
+      {isExpanded && recording?.audio_file && (
+        <div className="px-3 py-2 bg-slate-800/50">
+          <WaveformPlayer
+            src={`/api/audio/${recording.id}`}
+            title={recording.alpha_tag || `TG ${recording.talkgroup_id}`}
+            height={50}
+            compact
+            autoPlay
+            showVolumeControl={false}
+            onEnded={onPlaybackEnded}
+            waveColor="#475569"
+            progressColor="#3b82f6"
+            backgroundColor="#1e293b"
+          />
+        </div>
       )}
     </div>
   );
@@ -118,9 +184,9 @@ interface ControlChannelFeedProps {
 export function ControlChannelFeed({ compact = false }: ControlChannelFeedProps) {
   const { events, setEvents } = useControlChannelStore();
   const { calls } = useCallsStore();
-  const { addToQueue, setLiveEnabled } = useAudioStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  const [expandedEventKey, setExpandedEventKey] = useState<string | null>(null);
 
   // Fetch initial events
   useEffect(() => {
@@ -147,26 +213,23 @@ export function ControlChannelFeed({ compact = false }: ControlChannelFeedProps)
   };
 
   // Find if a talkgroup has a recent recording
-  const getTalkgroupRecording = (talkgroupId: number) => {
+  const getTalkgroupRecording = (talkgroupId: number): Call | undefined => {
     return calls.find(
       (call) => call.talkgroup_id === talkgroupId && call.audio_file && !call.isActive
     );
   };
 
-  // Handle playing a talkgroup's most recent recording
-  const handlePlayTalkgroup = (talkgroupId: number) => {
-    const recording = getTalkgroupRecording(talkgroupId);
-    if (recording && recording.audio_file) {
-      // Enable live audio and add to queue
-      setLiveEnabled(true);
-      addToQueue({
-        id: recording.id,
-        talkgroupId: recording.talkgroup_id,
-        alphaTag: recording.alpha_tag,
-        audioUrl: `/api/audio/${recording.id}`,
-        duration: recording.duration ?? undefined,
-      });
-    }
+  // Generate a unique key for an event
+  const getEventKey = (event: ControlChannelEvent, index: number) => `${event.timestamp}-${index}`;
+
+  // Handle expanding/collapsing an event
+  const handleToggleExpand = (eventKey: string) => {
+    setExpandedEventKey(prev => prev === eventKey ? null : eventKey);
+  };
+
+  // Handle when playback ends
+  const handlePlaybackEnded = () => {
+    setExpandedEventKey(null);
   };
 
   if (events.length === 0) {
@@ -195,14 +258,20 @@ export function ControlChannelFeed({ compact = false }: ControlChannelFeedProps)
         </div>
       )}
       <div ref={containerRef} className="flex-1 overflow-y-auto" onScroll={handleScroll}>
-        {events.map((event, index) => (
-          <EventRow
-            key={`${event.timestamp}-${index}`}
-            event={event}
-            onPlayTalkgroup={handlePlayTalkgroup}
-            hasRecording={event.talkgroup ? !!getTalkgroupRecording(event.talkgroup) : false}
-          />
-        ))}
+        {events.map((event, index) => {
+          const eventKey = getEventKey(event, index);
+          const recording = event.talkgroup ? getTalkgroupRecording(event.talkgroup) : undefined;
+          return (
+            <EventRow
+              key={eventKey}
+              event={event}
+              recording={recording}
+              isExpanded={expandedEventKey === eventKey}
+              onToggleExpand={() => handleToggleExpand(eventKey)}
+              onPlaybackEnded={handlePlaybackEnded}
+            />
+          );
+        })}
       </div>
     </div>
   );

@@ -18,6 +18,31 @@ import { audioRoutes } from './routes/api/audio.js';
 import { radioReferenceRoutes } from './routes/api/radioreference.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+/**
+ * Process a completed call: save to database and optionally broadcast.
+ * Consolidates duplicate logic from callEnd and fileWatcher handlers.
+ */
+function processCompletedCall(call, audioPath) {
+    // Upsert talkgroup info
+    upsertTalkgroup(call.talkgroup, call.talkgrouptag, call.talkgroupDescription, call.talkgroupGroup, call.talkgroupTag);
+    // Insert call record
+    insertCall({
+        id: call.id,
+        talkgroupId: call.talkgroup,
+        frequency: call.freq,
+        startTime: call.startTime,
+        stopTime: call.stopTime,
+        duration: call.length,
+        emergency: call.emergency,
+        encrypted: call.encrypted,
+        audioFile: audioPath,
+        audioType: call.audioType,
+    });
+    // Insert call sources
+    if (call.srcList && call.srcList.length > 0) {
+        insertCallSources(call.id, call.srcList);
+    }
+}
 async function main() {
     // Initialize database
     initializeDatabase();
@@ -54,6 +79,15 @@ async function main() {
         audioReceiver: audioReceiver.isListening(),
         clients: 0,
     }));
+    // SPA fallback - serve index.html for all non-API routes (client-side routing)
+    app.setNotFoundHandler(async (request, reply) => {
+        // Don't serve index.html for API routes or WebSocket
+        if (request.url.startsWith('/api/') || request.url.startsWith('/ws')) {
+            return reply.code(404).send({ error: 'Not found' });
+        }
+        // Serve index.html for client-side routes
+        return reply.sendFile('index.html');
+    });
     // SDR configuration endpoint (for in-band calculation)
     app.get('/api/sdr', async () => {
         const halfBandwidth = config.sdr.sampleRate / 2;
@@ -90,25 +124,8 @@ async function main() {
     });
     trStatusServer.on('callEnd', (call) => {
         console.log(`Call ended: TG ${call.talkgroup} (${call.talkgrouptag}) - ${call.length}s`);
-        // Upsert talkgroup info
-        upsertTalkgroup(call.talkgroup, call.talkgrouptag, call.talkgroupDescription, call.talkgroupGroup, call.talkgroupTag);
-        // Insert call record
-        insertCall({
-            id: call.id,
-            talkgroupId: call.talkgroup,
-            frequency: call.freq,
-            startTime: call.startTime,
-            stopTime: call.stopTime,
-            duration: call.length,
-            emergency: call.emergency,
-            encrypted: call.encrypted,
-            audioFile: call.filename,
-            audioType: call.audioType,
-        });
-        // Insert call sources
-        if (call.srcList && call.srcList.length > 0) {
-            insertCallSources(call.id, call.srcList);
-        }
+        // Save to database
+        processCompletedCall(call, call.filename);
         // Broadcast to clients
         broadcastServer.broadcastCallEnd({
             id: call.id,
@@ -144,24 +161,8 @@ async function main() {
     });
     fileWatcher.on('call', (call, audioPath) => {
         console.log(`Recording detected: TG ${call.talkgroup} - ${audioPath}`);
-        // Upsert talkgroup
-        upsertTalkgroup(call.talkgroup, call.talkgrouptag, call.talkgroupDescription, call.talkgroupGroup, call.talkgroupTag);
-        // Insert call
-        insertCall({
-            id: call.id,
-            talkgroupId: call.talkgroup,
-            frequency: call.freq,
-            startTime: call.startTime,
-            stopTime: call.stopTime,
-            duration: call.length,
-            emergency: call.emergency,
-            encrypted: call.encrypted,
-            audioFile: audioPath,
-            audioType: call.audioType,
-        });
-        if (call.srcList && call.srcList.length > 0) {
-            insertCallSources(call.id, call.srcList);
-        }
+        // Save to database
+        processCompletedCall(call, audioPath);
         // Broadcast new recording for auto-play
         broadcastServer.broadcastNewRecording({
             id: call.id,

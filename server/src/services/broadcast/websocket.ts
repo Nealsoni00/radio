@@ -90,7 +90,7 @@ export class BroadcastServer {
 
       case 'enableFFT':
         client.streamFFT = message.enabled ?? false;
-        console.log(`Client ${clientId} FFT streaming: ${client.streamFFT}`);
+        console.log(`Client ${clientId} FFT streaming: ${client.streamFFT} (total FFT subscribers: ${this.countFFTSubscribers()})`);
         break;
     }
   }
@@ -188,6 +188,9 @@ export class BroadcastServer {
   }
 
   broadcastFFT(packet: FFTPacket): void {
+    const subscribers = this.countFFTSubscribers();
+    if (subscribers === 0) return; // No subscribers, skip
+
     // Build binary message: [4 bytes header length][JSON header][Float32 FFT data]
     const header = Buffer.from(
       JSON.stringify({
@@ -208,12 +211,19 @@ export class BroadcastServer {
     const fftBuffer = Buffer.from(packet.magnitudes.buffer);
     const message = Buffer.concat([headerLen, header, fftBuffer]);
 
+    let sentCount = 0;
     this.clients.forEach((client) => {
       if (client.ws.readyState !== WebSocket.OPEN) return;
       if (!client.streamFFT) return;
 
       client.ws.send(message);
+      sentCount++;
     });
+
+    // Log occasionally (every 30 packets = ~1 second)
+    if (Math.random() < 0.033) {
+      console.log(`FFT broadcast: sent to ${sentCount}/${this.clients.size} clients, ${packet.fftSize} bins`);
+    }
   }
 
   broadcastControlChannel(event: ControlChannelEvent): void {
@@ -234,6 +244,14 @@ export class BroadcastServer {
 
   getClientCount(): number {
     return this.clients.size;
+  }
+
+  private countFFTSubscribers(): number {
+    let count = 0;
+    this.clients.forEach((client) => {
+      if (client.streamFFT) count++;
+    });
+    return count;
   }
 
   private generateClientId(): string {

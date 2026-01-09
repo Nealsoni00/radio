@@ -1,0 +1,491 @@
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useAudioStore, useTalkgroupsStore } from '../../store';
+
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface ActiveCall {
+  talkgroupId: number;
+  alphaTag?: string;
+  frequency?: number;
+  startTime: number;
+}
+
+// PCM Player with built-in analyzer for visualization
+class LivePCMPlayer {
+  private audioContext: AudioContext | null = null;
+  private gainNode: GainNode | null = null;
+  private analyser: AnalyserNode | null = null;
+  private sampleRate: number;
+  private nextTime = 0;
+  private isInitialized = false;
+
+  constructor(sampleRate = 8000) {
+    this.sampleRate = sampleRate;
+  }
+
+  init() {
+    if (this.isInitialized) return;
+
+    this.audioContext = new AudioContext({ sampleRate: this.sampleRate });
+    this.gainNode = this.audioContext.createGain();
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 256;
+    this.analyser.smoothingTimeConstant = 0.7;
+
+    this.gainNode.connect(this.analyser);
+    this.analyser.connect(this.audioContext.destination);
+    this.nextTime = this.audioContext.currentTime;
+    this.isInitialized = true;
+  }
+
+  setVolume(volume: number) {
+    if (this.gainNode) {
+      this.gainNode.gain.value = volume;
+    }
+  }
+
+  getAnalyser(): AnalyserNode | null {
+    return this.analyser;
+  }
+
+  feed(int16Data: Int16Array) {
+    if (!this.isInitialized) {
+      this.init();
+    }
+
+    if (!this.audioContext || !this.gainNode) return;
+
+    // Convert Int16 to Float32
+    const floatData = new Float32Array(int16Data.length);
+    for (let i = 0; i < int16Data.length; i++) {
+      floatData[i] = int16Data[i] / 32768;
+    }
+
+    // Create audio buffer
+    const buffer = this.audioContext.createBuffer(1, floatData.length, this.sampleRate);
+    buffer.getChannelData(0).set(floatData);
+
+    // Create buffer source
+    const source = this.audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.gainNode);
+
+    // Schedule playback
+    const currentTime = this.audioContext.currentTime;
+    if (this.nextTime < currentTime) {
+      this.nextTime = currentTime;
+    }
+
+    source.start(this.nextTime);
+    this.nextTime += buffer.duration;
+  }
+
+  resume() {
+    if (this.audioContext?.state === 'suspended') {
+      this.audioContext.resume();
+    }
+  }
+
+  destroy() {
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
+      this.gainNode = null;
+      this.analyser = null;
+      this.isInitialized = false;
+    }
+  }
+}
+
+export function FloatingAudioPlayer() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const playerRef = useRef<LivePCMPlayer | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const lastAudioTimeRef = useRef<number>(0);
+
+  const [position, setPosition] = useState<Position>(() => {
+    const saved = localStorage.getItem('floating-player-position');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // ignore
+      }
+    }
+    return { x: window.innerWidth - 360, y: window.innerHeight - 240 };
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState<Position>({ x: 0, y: 0 });
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
+  const [isReceivingAudio, setIsReceivingAudio] = useState(false);
+
+  const { isLiveEnabled, volume, setVolume, setLiveEnabled } = useAudioStore();
+  const { selectedTalkgroups } = useTalkgroupsStore();
+
+  // Save position to localStorage
+  useEffect(() => {
+    localStorage.setItem('floating-player-position', JSON.stringify(position));
+  }, [position]);
+
+  // Handle incoming live audio chunks
+  const handleAudioChunk = useCallback(
+    (event: CustomEvent) => {
+      const { talkgroupId, pcmData, metadata } = event.detail;
+
+      // Check if we're subscribed to this talkgroup
+      const isSubscribed = selectedTalkgroups.size === 0 || selectedTalkgroups.has(talkgroupId);
+
+      if (isLiveEnabled && isSubscribed && playerRef.current) {
+        playerRef.current.feed(pcmData);
+        lastAudioTimeRef.current = Date.now();
+        setIsReceivingAudio(true);
+
+        // Update active call info
+        setActiveCall({
+          talkgroupId,
+          alphaTag: metadata?.talkgrouptag || metadata?.alphaTag,
+          frequency: metadata?.freq || metadata?.frequency,
+          startTime: Date.now(),
+        });
+      }
+    },
+    [isLiveEnabled, selectedTalkgroups]
+  );
+
+  // Initialize player and listen for audio events
+  useEffect(() => {
+    if (isLiveEnabled) {
+      playerRef.current = new LivePCMPlayer(8000);
+      playerRef.current.init();
+      playerRef.current.setVolume(volume);
+
+      window.addEventListener('audioChunk', handleAudioChunk as EventListener);
+
+      // Check for audio timeout (no audio for 2 seconds = idle)
+      const idleCheck = setInterval(() => {
+        if (Date.now() - lastAudioTimeRef.current > 2000) {
+          setIsReceivingAudio(false);
+          setActiveCall(null);
+        }
+      }, 500);
+
+      return () => {
+        window.removeEventListener('audioChunk', handleAudioChunk as EventListener);
+        clearInterval(idleCheck);
+        playerRef.current?.destroy();
+        playerRef.current = null;
+      };
+    }
+  }, [isLiveEnabled, handleAudioChunk, volume]);
+
+  // Update volume
+  useEffect(() => {
+    if (playerRef.current) {
+      playerRef.current.setVolume(volume);
+    }
+  }, [volume]);
+
+  // Draw visualization
+  const drawVisualization = useCallback(() => {
+    const canvas = canvasRef.current;
+    const analyser = playerRef.current?.getAnalyser();
+
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.width / dpr;
+    const height = canvas.height / dpr;
+
+    // Clear with gradient background
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, '#0f172a');
+    gradient.addColorStop(1, '#1e293b');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    if (analyser && isReceivingAudio) {
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyser.getByteFrequencyData(dataArray);
+
+      // Draw frequency bars that fill the entire width
+      const barsToShow = 64;
+      const barGap = 2;
+      const barWidth = (width - (barsToShow - 1) * barGap) / barsToShow;
+
+      for (let i = 0; i < barsToShow; i++) {
+        const dataIndex = Math.floor((i / barsToShow) * (bufferLength * 0.8));
+        const value = dataArray[dataIndex];
+        const barHeight = Math.max(3, (value / 255) * height * 0.95);
+
+        // Color based on intensity
+        const hue = 180 + (i / barsToShow) * 40;
+        const saturation = 60 + (value / 255) * 40;
+        const lightness = 40 + (value / 255) * 25;
+
+        const x = i * (barWidth + barGap);
+        const barY = height - barHeight;
+
+        ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        ctx.beginPath();
+        ctx.roundRect(x, barY, barWidth, barHeight, [2, 2, 0, 0]);
+        ctx.fill();
+
+        // Glow for active bars
+        if (value > 100) {
+          ctx.shadowColor = `hsl(${hue}, ${saturation}%, 60%)`;
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.roundRect(x, barY, barWidth, barHeight, [2, 2, 0, 0]);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      }
+    } else {
+      // Draw idle state - subtle animated bars
+      const barsToShow = 64;
+      const barGap = 2;
+      const barWidth = (width - (barsToShow - 1) * barGap) / barsToShow;
+      const time = Date.now() / 1000;
+
+      for (let i = 0; i < barsToShow; i++) {
+        const wave = Math.sin(i * 0.2 + time * 2) * 0.5 + 0.5;
+        const barHeight = 4 + wave * 8;
+
+        const x = i * (barWidth + barGap);
+        const barY = height - barHeight;
+
+        ctx.fillStyle = 'rgba(100, 116, 139, 0.4)';
+        ctx.beginPath();
+        ctx.roundRect(x, barY, barWidth, barHeight, [1, 1, 0, 0]);
+        ctx.fill();
+      }
+    }
+
+    animationRef.current = requestAnimationFrame(drawVisualization);
+  }, [isReceivingAudio]);
+
+  // Start animation loop
+  useEffect(() => {
+    if (isLiveEnabled && !isMinimized) {
+      animationRef.current = requestAnimationFrame(drawVisualization);
+    }
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [isLiveEnabled, isMinimized, drawVisualization]);
+
+  // Handle canvas resize
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = 320 * dpr;
+    canvas.height = 80 * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx?.scale(dpr, dpr);
+  }, []);
+
+  // Drag handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, input')) return;
+    e.preventDefault();
+    setIsDragging(true);
+    setDragOffset({
+      x: e.clientX - position.x,
+      y: e.clientY - position.y,
+    });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      const newX = Math.max(0, Math.min(window.innerWidth - 360, e.clientX - dragOffset.x));
+      const newY = Math.max(0, Math.min(window.innerHeight - 100, e.clientY - dragOffset.y));
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragOffset]);
+
+  // Resume audio context on user interaction
+  const handleUserInteraction = () => {
+    playerRef.current?.resume();
+  };
+
+  if (!isLiveEnabled) return null;
+
+  return (
+    <div
+      className={`fixed z-50 bg-slate-900/95 backdrop-blur-sm rounded-xl shadow-2xl border border-slate-700/50 transition-all duration-200 select-none ${
+        isDragging ? 'cursor-grabbing shadow-blue-500/20' : 'cursor-grab'
+      }`}
+      style={{ left: position.x, top: position.y, width: isMinimized ? 'auto' : 340 }}
+      onMouseDown={handleMouseDown}
+      onClick={handleUserInteraction}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/50">
+        <div className="flex items-center gap-2">
+          <div className={`w-2.5 h-2.5 rounded-full ${isReceivingAudio ? 'bg-green-500 animate-pulse' : 'bg-slate-500'}`} />
+          <span className="text-sm font-medium text-slate-200">Live Scanner</span>
+          {isReceivingAudio && (
+            <span className="px-1.5 py-0.5 text-xs bg-green-600/30 text-green-300 rounded border border-green-500/30">
+              LIVE
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setIsMinimized(!isMinimized)}
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded transition-colors"
+            title={isMinimized ? 'Expand' : 'Minimize'}
+          >
+            {isMinimized ? (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+              </svg>
+            )}
+          </button>
+          <button
+            onClick={() => setLiveEnabled(false)}
+            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded transition-colors"
+            title="Stop Live Audio"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {!isMinimized && (
+        <>
+          {/* Waveform Visualization */}
+          <div className="px-3 pt-3">
+            <canvas
+              ref={canvasRef}
+              className="w-full rounded-lg"
+              style={{ height: 80 }}
+            />
+          </div>
+
+          {/* Active Call Info */}
+          <div className="px-3 py-3">
+            {activeCall ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="text-base font-semibold text-white">
+                    {activeCall.alphaTag || `TG ${activeCall.talkgroupId}`}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                    <span className="text-xs text-green-400">Receiving</span>
+                  </div>
+                </div>
+                {activeCall.frequency && (
+                  <div className="text-xs text-slate-400 font-mono">
+                    {(activeCall.frequency / 1000000).toFixed(5)} MHz
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1">
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="w-1 h-5 bg-slate-600 rounded-full animate-pulse"
+                      style={{ animationDelay: `${i * 0.15}s` }}
+                    />
+                  ))}
+                </div>
+                <span className="text-sm text-slate-400">Listening for transmissions...</span>
+              </div>
+            )}
+          </div>
+
+          {/* Volume Control */}
+          <div className="px-3 pb-3 flex items-center gap-3 border-t border-slate-700/50 pt-3">
+            <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
+            </svg>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
+              onChange={(e) => setVolume(parseFloat(e.target.value))}
+              className="flex-1 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            />
+            <span className="text-xs text-slate-500 w-10 text-right font-mono">{Math.round(volume * 100)}%</span>
+          </div>
+
+          {/* Subscribed Talkgroups Info */}
+          <div className="px-3 pb-3 text-xs text-slate-500">
+            {selectedTalkgroups.size === 0 ? (
+              'Listening to all talkgroups'
+            ) : (
+              `Listening to ${selectedTalkgroups.size} talkgroup${selectedTalkgroups.size !== 1 ? 's' : ''}`
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Minimized state */}
+      {isMinimized && (
+        <div className="px-3 py-2 flex items-center gap-2">
+          {isReceivingAudio ? (
+            <>
+              <div className="flex gap-0.5">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div
+                    key={i}
+                    className="w-1 bg-green-500 rounded-full animate-pulse"
+                    style={{
+                      height: `${10 + Math.random() * 10}px`,
+                      animationDelay: `${i * 0.08}s`,
+                    }}
+                  />
+                ))}
+              </div>
+              <span className="text-xs text-white truncate max-w-36">
+                {activeCall?.alphaTag || `TG ${activeCall?.talkgroupId}`}
+              </span>
+            </>
+          ) : (
+            <span className="text-xs text-slate-400">Listening...</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -36,6 +36,7 @@ export class FFTReceiver extends EventEmitter {
       try {
         const packet = this.parsePacket(msg);
         if (packet) {
+          console.log(`FFT packet received: ${packet.fftSize} bins, ${packet.centerFreq / 1e6} MHz`);
           this.emit('fft', packet);
         }
       } catch (err) {

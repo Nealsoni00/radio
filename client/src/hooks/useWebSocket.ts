@@ -102,6 +102,10 @@ export function useWebSocket() {
 
         case 'newRecording':
           if (message.call) {
+            // Add to calls list so it shows in Recent Calls
+            const call = transformCall(message.call);
+            addCall(call);
+
             // Access store state directly to avoid stale closures
             const audioState = useAudioStore.getState();
             if (audioState.isLiveEnabled) {

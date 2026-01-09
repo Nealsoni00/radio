@@ -40,7 +40,7 @@
   "audioStreaming": false,
   "plugins": [
     {
-      "library": "libfftstream.so",
+      "library": "/Users/nealsoni/Desktop/personal-projects/radio/tr-build/build/libfftstream.so",
       "name": "FFT Stream",
       "enabled": true,
       "address": "127.0.0.1",

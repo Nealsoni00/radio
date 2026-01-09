@@ -81,13 +81,13 @@ interface SyncProgress {
 function loadProgress(): SyncProgress {
   try {
     const row = db.prepare(`
-      SELECT data FROM rr_sync_progress
+      SELECT error_message FROM rr_sync_progress
       WHERE entity_type = 'full_sync' AND entity_id = 0
       ORDER BY id DESC LIMIT 1
-    `).get() as { data: string } | undefined;
+    `).get() as { error_message: string } | undefined;
 
-    if (row) {
-      return JSON.parse(row.data);
+    if (row && row.error_message) {
+      return JSON.parse(row.error_message);
     }
   } catch (e) {
     // No progress saved

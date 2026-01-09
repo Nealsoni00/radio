@@ -1,3 +1,43 @@
+/** Database row from talkgroups table */
+export interface TalkgroupRow {
+    id: number;
+    alpha_tag: string;
+    description: string | null;
+    group_name: string | null;
+    group_tag: string | null;
+    mode: string;
+    created_at: number;
+    updated_at: number;
+}
+/** Database row from calls table with joined talkgroup fields */
+export interface CallRow {
+    id: string;
+    talkgroup_id: number;
+    frequency: number;
+    start_time: number;
+    stop_time: number | null;
+    duration: number | null;
+    emergency: number;
+    encrypted: number;
+    audio_file: string | null;
+    audio_type: string | null;
+    created_at: number;
+    alpha_tag?: string;
+    talkgroup_description?: string;
+    group_name?: string;
+    group_tag?: string;
+}
+/** Database row from call_sources table */
+export interface CallSourceRow {
+    id: number;
+    call_id: string;
+    source_id: number;
+    timestamp: number;
+    position: number;
+    emergency: number;
+    tag: string | null;
+    unit_tag?: string;
+}
 export interface Talkgroup {
     id: number;
     alphaTag: string;

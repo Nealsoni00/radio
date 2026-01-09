@@ -1,4 +1,5 @@
 import { Database as DatabaseType } from 'better-sqlite3';
+import type { CallRow, CallSourceRow, TalkgroupRow } from '../types/index.js';
 export declare const db: DatabaseType;
 export declare function initializeDatabase(): void;
 export declare function upsertTalkgroup(id: number, alphaTag: string, description: string | null, groupName: string | null, groupTag: string | null, mode?: string): void;
@@ -21,15 +22,16 @@ export declare function insertCallSources(callId: string, sources: Array<{
     emergency: boolean;
     tag: string;
 }>): void;
-export declare function getCalls(options?: {
+export interface GetCallsOptions {
     limit?: number;
     offset?: number;
     talkgroupId?: number;
     since?: number;
     emergency?: boolean;
-}): any[];
-export declare function getCall(id: string): any;
-export declare function getCallSources(callId: string): any[];
-export declare function getTalkgroups(): any[];
-export declare function getTalkgroup(id: number): any;
+}
+export declare function getCalls(options?: GetCallsOptions): CallRow[];
+export declare function getCall(id: string): CallRow | undefined;
+export declare function getCallSources(callId: string): CallSourceRow[];
+export declare function getTalkgroups(): TalkgroupRow[];
+export declare function getTalkgroup(id: number): TalkgroupRow | undefined;
 //# sourceMappingURL=index.d.ts.map
