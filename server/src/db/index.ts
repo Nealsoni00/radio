@@ -2,6 +2,7 @@ import Database, { Database as DatabaseType } from 'better-sqlite3';
 import { mkdirSync, existsSync } from 'fs';
 import { dirname } from 'path';
 import { config } from '../config/index.js';
+import type { CallRow, CallSourceRow, TalkgroupRow } from '../types/index.js';
 
 const dbPath = config.database.path;
 const dbDir = dirname(dbPath);
@@ -305,13 +306,15 @@ export function insertCallSources(callId: string, sources: Array<{
   insertMany(sources);
 }
 
-export function getCalls(options: {
+export interface GetCallsOptions {
   limit?: number;
   offset?: number;
   talkgroupId?: number;
   since?: number;
   emergency?: boolean;
-} = {}): any[] {
+}
+
+export function getCalls(options: GetCallsOptions = {}): CallRow[] {
   const { limit = 50, offset = 0, talkgroupId, since, emergency } = options;
 
   let query = `
@@ -325,7 +328,7 @@ export function getCalls(options: {
     LEFT JOIN talkgroups t ON c.talkgroup_id = t.id
     WHERE 1=1
   `;
-  const params: any[] = [];
+  const params: (number | string)[] = [];
 
   if (talkgroupId !== undefined) {
     query += ` AND c.talkgroup_id = ?`;
@@ -343,10 +346,10 @@ export function getCalls(options: {
   query += ` ORDER BY c.start_time DESC LIMIT ? OFFSET ?`;
   params.push(limit, offset);
 
-  return db.prepare(query).all(...params);
+  return db.prepare(query).all(...params) as CallRow[];
 }
 
-export function getCall(id: string): any {
+export function getCall(id: string): CallRow | undefined {
   return db.prepare(`
     SELECT
       c.*,
@@ -357,25 +360,25 @@ export function getCall(id: string): any {
     FROM calls c
     LEFT JOIN talkgroups t ON c.talkgroup_id = t.id
     WHERE c.id = ?
-  `).get(id);
+  `).get(id) as CallRow | undefined;
 }
 
-export function getCallSources(callId: string): any[] {
+export function getCallSources(callId: string): CallSourceRow[] {
   return db.prepare(`
     SELECT cs.*, u.tag as unit_tag
     FROM call_sources cs
     LEFT JOIN units u ON cs.source_id = u.id
     WHERE cs.call_id = ?
     ORDER BY cs.position
-  `).all(callId);
+  `).all(callId) as CallSourceRow[];
 }
 
-export function getTalkgroups(): any[] {
+export function getTalkgroups(): TalkgroupRow[] {
   return db.prepare(`
     SELECT * FROM talkgroups ORDER BY group_name, alpha_tag
-  `).all();
+  `).all() as TalkgroupRow[];
 }
 
-export function getTalkgroup(id: number): any {
-  return db.prepare(`SELECT * FROM talkgroups WHERE id = ?`).get(id);
+export function getTalkgroup(id: number): TalkgroupRow | undefined {
+  return db.prepare(`SELECT * FROM talkgroups WHERE id = ?`).get(id) as TalkgroupRow | undefined;
 }

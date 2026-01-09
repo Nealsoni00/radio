@@ -1,52 +1,41 @@
-import { useWebSocket } from './hooks/useWebSocket';
-import { Header } from './components/layout/Header';
-import { ResizeHandle } from './components/layout/ResizablePanel';
-import { CallList } from './components/calls/CallList';
-import { CallDetails } from './components/calls/CallDetails';
-import { TalkgroupFilter } from './components/talkgroups/TalkgroupFilter';
-import { LiveAudioPlayer } from './components/audio/LiveAudioPlayer';
-import { FloatingAudioPlayer } from './components/audio/FloatingAudioPlayer';
-import { SystemStatus } from './components/status/SystemStatus';
+import { useWebSocket, usePersistentSize } from './hooks';
+import { Header, ResizeHandle } from './components/layout';
+import { CallList, CallDetails } from './components/calls';
+import { TalkgroupFilter } from './components/talkgroups';
+import { LiveAudioPlayer, FloatingAudioPlayer } from './components/audio';
+import { SystemStatus } from './components/status';
 import { SystemBrowser } from './components/radioreference';
 import { ControlChannelFeed } from './components/control';
 import { SpectrumPanel } from './components/spectrum';
 import { useCallsStore, useAudioStore } from './store';
 import { useFFTStore } from './store/fft';
-import { useEffect, useState, useCallback } from 'react';
+import { PANEL_SIZES, STORAGE_KEYS } from './constants';
+import { useEffect, useState } from 'react';
 import { Routes, Route, useLocation, Link } from 'react-router-dom';
-
-// Helper to load/save panel sizes from localStorage
-function usePanelSize(key: string, defaultSize: number, minSize: number, maxSize: number) {
-  const [size, setSize] = useState(() => {
-    const saved = localStorage.getItem(`panel-size-${key}`);
-    if (saved) {
-      const parsed = parseInt(saved, 10);
-      if (!isNaN(parsed) && parsed >= minSize && parsed <= maxSize) {
-        return parsed;
-      }
-    }
-    return defaultSize;
-  });
-
-  const updateSize = useCallback((delta: number) => {
-    setSize((prev) => {
-      const newSize = Math.min(maxSize, Math.max(minSize, prev + delta));
-      localStorage.setItem(`panel-size-${key}`, newSize.toString());
-      return newSize;
-    });
-  }, [key, minSize, maxSize]);
-
-  return [size, updateSize] as const;
-}
 
 function LiveView() {
   const { selectedCall } = useCallsStore();
   const [isControlPanelCollapsed, setIsControlPanelCollapsed] = useState(false);
 
-  // Resizable panel sizes
-  const [sidebarWidth, updateSidebarWidth] = usePanelSize('talkgroups-sidebar', 288, 200, 500);
-  const [controlPanelHeight, updateControlPanelHeight] = usePanelSize('control-panel', 200, 100, 500);
-  const [detailsWidth, updateDetailsWidth] = usePanelSize('call-details', 320, 250, 600);
+  // Resizable panel sizes with localStorage persistence
+  const [sidebarWidth, updateSidebarWidth] = usePersistentSize(
+    STORAGE_KEYS.TALKGROUPS_SIDEBAR,
+    PANEL_SIZES.SIDEBAR_DEFAULT,
+    PANEL_SIZES.SIDEBAR_MIN,
+    PANEL_SIZES.SIDEBAR_MAX
+  );
+  const [controlPanelHeight, updateControlPanelHeight] = usePersistentSize(
+    STORAGE_KEYS.CONTROL_PANEL,
+    PANEL_SIZES.CONTROL_PANEL_DEFAULT,
+    PANEL_SIZES.CONTROL_PANEL_MIN,
+    PANEL_SIZES.CONTROL_PANEL_MAX
+  );
+  const [detailsWidth, updateDetailsWidth] = usePersistentSize(
+    STORAGE_KEYS.CALL_DETAILS,
+    PANEL_SIZES.DETAILS_DEFAULT,
+    PANEL_SIZES.DETAILS_MIN,
+    PANEL_SIZES.DETAILS_MAX
+  );
 
   return (
     <div className="flex-1 flex overflow-hidden">
