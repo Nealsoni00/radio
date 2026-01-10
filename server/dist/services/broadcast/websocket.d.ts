@@ -22,6 +22,7 @@ export declare class BroadcastServer {
     broadcastFFT(packet: FFTPacket): void;
     broadcastControlChannel(event: ControlChannelEvent): void;
     getClientCount(): number;
+    private countFFTSubscribers;
     private generateClientId;
 }
 //# sourceMappingURL=websocket.d.ts.map

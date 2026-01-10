@@ -86,6 +86,7 @@ export function WaveformPlayer({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const isSeekingRef = useRef(false);
 
   // State
   const [waveformData, setWaveformData] = useState<WaveformData | null>(null);
@@ -145,17 +146,35 @@ export function WaveformPlayer({
   useEffect(() => {
     let cancelled = false;
 
-    const loadAudio = async () => {
-      setIsLoading(true);
-      setError(null);
+    // Reset state immediately when src changes
+    setIsLoading(true);
+    setError(null);
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+    setWaveformData(null);
 
+    // Clean up previous audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      audioRef.current.onloadedmetadata = null;
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current = null;
+    }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
+    const loadAudio = async () => {
       try {
         // Create audio element
         const audio = new Audio();
         audio.crossOrigin = 'anonymous';
         audio.preload = 'auto';
-        audio.volume = initialVolume;
-        audioRef.current = audio;
+        audio.volume = volume;
 
         // Set up audio event handlers
         audio.onloadedmetadata = () => {
@@ -164,6 +183,7 @@ export function WaveformPlayer({
         };
 
         audio.onended = () => {
+          if (cancelled) return;
           setIsPlaying(false);
           setCurrentTime(0);
           onEnded?.();
@@ -174,6 +194,9 @@ export function WaveformPlayer({
           setError('Failed to load audio');
           setIsLoading(false);
         };
+
+        // Store ref early so seekTo works during loading
+        audioRef.current = audio;
 
         // Fetch audio data for waveform analysis
         const response = await fetch(src);
@@ -207,8 +230,10 @@ export function WaveformPlayer({
 
         if (autoPlay) {
           audio.play().then(() => {
-            setIsPlaying(true);
-            onPlay?.();
+            if (!cancelled) {
+              setIsPlaying(true);
+              onPlay?.();
+            }
           }).catch(() => {});
         }
       } catch (err) {
@@ -225,13 +250,27 @@ export function WaveformPlayer({
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = '';
+        audioRef.current.onloadedmetadata = null;
+        audioRef.current.onended = null;
+        audioRef.current.onerror = null;
         audioRef.current = null;
       }
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
     };
-  }, [src, autoPlay, extractPeaks, onPlay, onEnded, initialVolume]);
+  }, [src]); // Only depend on src - other deps cause unwanted reloads
+
+  // Handle autoPlay separately to avoid audio reload
+  useEffect(() => {
+    if (autoPlay && audioRef.current && !isLoading && !error && !isPlaying) {
+      audioRef.current.play().then(() => {
+        setIsPlaying(true);
+        onPlay?.();
+      }).catch(() => {});
+    }
+  }, [autoPlay, isLoading, error]);
 
   // Handle volume changes without reloading audio
   useEffect(() => {
@@ -243,10 +282,12 @@ export function WaveformPlayer({
   // Animation loop for time updates
   useEffect(() => {
     const updateTime = () => {
-      if (audioRef.current && isPlaying) {
+      if (audioRef.current && isPlaying && !isSeekingRef.current) {
         const time = audioRef.current.currentTime;
         setCurrentTime(time);
         onTimeUpdate?.(time);
+      }
+      if (isPlaying) {
         animationFrameRef.current = requestAnimationFrame(updateTime);
       }
     };
@@ -338,16 +379,35 @@ export function WaveformPlayer({
   // Seek to position
   const seekTo = useCallback((clientX: number) => {
     const canvas = canvasRef.current;
-    if (!canvas || !audioRef.current) return;
+    const audio = audioRef.current;
+    if (!canvas || !audio || !duration || duration <= 0) return;
 
     const rect = canvas.getBoundingClientRect();
     const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
     const seekProgress = x / rect.width;
-    const seekTime = seekProgress * duration;
+    const seekTime = Math.max(0, Math.min(seekProgress * duration, duration - 0.01));
 
-    audioRef.current.currentTime = seekTime;
+    // Set seeking flag to prevent animation loop from overwriting
+    isSeekingRef.current = true;
     setCurrentTime(seekTime);
     onTimeUpdate?.(seekTime);
+
+    // Only update audio if ready
+    if (audio.readyState >= 1) {
+      audio.currentTime = seekTime;
+      // Clear seeking flag after audio reports it's done seeking
+      const onSeeked = () => {
+        isSeekingRef.current = false;
+        audio.removeEventListener('seeked', onSeeked);
+      };
+      audio.addEventListener('seeked', onSeeked);
+      // Fallback timeout in case seeked event doesn't fire
+      setTimeout(() => {
+        isSeekingRef.current = false;
+      }, 100);
+    } else {
+      isSeekingRef.current = false;
+    }
   }, [duration, onTimeUpdate]);
 
   // Mouse handlers

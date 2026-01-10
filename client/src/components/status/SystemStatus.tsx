@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useConnectionStore, useAudioStore, useCallsStore } from '../../store';
 import { useFFTStore } from '../../store/fft';
-import { getHealth, getSDRDevices, type SDRDeviceStatus } from '../../services/api';
+import { getHealth } from '../../services/api';
 
 function formatFrequency(freq: number): string {
   return (freq / 1000000).toFixed(3);
@@ -10,7 +10,7 @@ function formatFrequency(freq: number): string {
 export function SystemStatus() {
   const { isConnected, decodeRate } = useConnectionStore();
   const { sdrConfig, isLiveEnabled, liveStream, audioQueue, fetchSDRConfig } = useAudioStore();
-  const { isEnabled: fftEnabled } = useFFTStore();
+  const { isEnabled: fftEnabled, currentFFT } = useFFTStore();
   const { calls } = useCallsStore();
   const [health, setHealth] = useState<{
     trunkRecorder: boolean;
@@ -20,7 +20,6 @@ export function SystemStatus() {
     clients: number;
   } | null>(null);
   const [serverReachable, setServerReachable] = useState(false);
-  const [sdrDevices, setSDRDevices] = useState<SDRDeviceStatus | null>(null);
 
   // Fetch SDR config on mount
   useEffect(() => {
@@ -45,24 +44,16 @@ export function SystemStatus() {
       }
     };
 
-    const fetchDevices = async () => {
-      try {
-        const devices = await getSDRDevices();
-        setSDRDevices(devices);
-      } catch {
-        setSDRDevices(null);
-      }
-    };
-
     fetchHealth();
-    fetchDevices();
     const healthInterval = setInterval(fetchHealth, 5000);
-    const devicesInterval = setInterval(fetchDevices, 10000); // Check devices less frequently
     return () => {
       clearInterval(healthInterval);
-      clearInterval(devicesInterval);
     };
   }, []);
+
+  // SDR status is determined by whether we're receiving FFT data from trunk-recorder
+  // This avoids running rtl_test which can kick trunk-recorder off the SDR device
+  const sdrActive = currentFFT !== null;
 
   // Determine Live Audio status color
   const getLiveAudioColor = (): 'green' | 'yellow' | 'red' | 'gray' => {
@@ -94,12 +85,8 @@ export function SystemStatus() {
           />
           <StatusIndicator
             label="RTL-SDR"
-            status={sdrDevices !== null && sdrDevices.totalDevices > 0}
-            color={
-              sdrDevices === null ? 'gray' :
-              sdrDevices.totalDevices === -1 ? 'yellow' :
-              sdrDevices.totalDevices > 0 ? 'green' : 'red'
-            }
+            status={sdrActive}
+            color={sdrActive ? 'green' : health?.trunkRecorder ? 'yellow' : 'red'}
           />
           <StatusIndicator
             label="Trunk Recorder"
@@ -145,40 +132,17 @@ export function SystemStatus() {
       {/* Bottom row: SDR devices and band info */}
       <div className="flex items-center justify-between text-xs border-t border-slate-700/50 pt-2">
         <div className="flex items-center gap-4">
-          {/* RTL-SDR Device Info */}
+          {/* RTL-SDR Status - based on FFT data reception */}
           <div className="flex items-center gap-2">
             <span className="text-slate-500">SDR:</span>
-            {sdrDevices === null ? (
-              <span className="text-slate-500">Checking...</span>
-            ) : sdrDevices.totalDevices === -1 ? (
-              <span className="text-yellow-400" title="rtl_test command not found">rtl-sdr not installed</span>
-            ) : sdrDevices.totalDevices === 0 ? (
-              <span className="text-red-400">No devices connected</span>
+            {sdrActive ? (
+              <span className="text-green-400">Receiving FFT data</span>
+            ) : health?.trunkRecorder ? (
+              <span className="text-yellow-400">Trunk-recorder running (no FFT yet)</span>
             ) : (
-              <span className="text-green-400">
-                {sdrDevices.totalDevices} device{sdrDevices.totalDevices !== 1 ? 's' : ''}
-              </span>
+              <span className="text-red-400">Not connected</span>
             )}
           </div>
-          {/* Show device details if connected */}
-          {sdrDevices && sdrDevices.devices.length > 0 && (
-            <div className="flex items-center gap-2 border-l border-slate-600 pl-4">
-              {sdrDevices.devices.map((device, idx) => (
-                <span
-                  key={device.index}
-                  className="text-slate-300"
-                  title={`Index: ${device.index}\nSerial: ${device.serial}\nManufacturer: ${device.manufacturer}\nProduct: ${device.product}`}
-                >
-                  {idx > 0 && <span className="text-slate-600 mx-1">|</span>}
-                  <span className="text-cyan-400">#{device.index}</span>
-                  <span className="text-slate-400 ml-1">{device.product || device.name}</span>
-                  {device.serial !== 'Unknown' && (
-                    <span className="text-slate-500 ml-1 font-mono">({device.serial})</span>
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
           {/* Band info separator */}
           {sdrConfig && (
             <>

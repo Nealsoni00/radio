@@ -65,7 +65,7 @@ export class BroadcastServer {
                 break;
             case 'enableFFT':
                 client.streamFFT = message.enabled ?? false;
-                console.log(`Client ${clientId} FFT streaming: ${client.streamFFT}`);
+                console.log(`Client ${clientId} FFT streaming: ${client.streamFFT} (total FFT subscribers: ${this.countFFTSubscribers()})`);
                 break;
         }
     }
@@ -154,6 +154,9 @@ export class BroadcastServer {
         });
     }
     broadcastFFT(packet) {
+        const subscribers = this.countFFTSubscribers();
+        if (subscribers === 0)
+            return; // No subscribers, skip
         // Build binary message: [4 bytes header length][JSON header][Float32 FFT data]
         const header = Buffer.from(JSON.stringify({
             type: 'fft',
@@ -170,13 +173,19 @@ export class BroadcastServer {
         // Convert Float32Array to Buffer
         const fftBuffer = Buffer.from(packet.magnitudes.buffer);
         const message = Buffer.concat([headerLen, header, fftBuffer]);
+        let sentCount = 0;
         this.clients.forEach((client) => {
             if (client.ws.readyState !== WebSocket.OPEN)
                 return;
             if (!client.streamFFT)
                 return;
             client.ws.send(message);
+            sentCount++;
         });
+        // Log occasionally (every 30 packets = ~1 second)
+        if (Math.random() < 0.033) {
+            console.log(`FFT broadcast: sent to ${sentCount}/${this.clients.size} clients, ${packet.fftSize} bins`);
+        }
     }
     broadcastControlChannel(event) {
         const message = {
@@ -195,6 +204,14 @@ export class BroadcastServer {
     }
     getClientCount() {
         return this.clients.size;
+    }
+    countFFTSubscribers() {
+        let count = 0;
+        this.clients.forEach((client) => {
+            if (client.streamFFT)
+                count++;
+        });
+        return count;
     }
     generateClientId() {
         return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;

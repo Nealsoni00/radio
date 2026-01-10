@@ -38,9 +38,12 @@ start: _kill-ports _ensure-built
     echo ""
     mkdir -p trunk-recorder/audio
 
-    # Find trunk-recorder binary
+    # Get absolute path to project root
+    PROJECT_ROOT="$(pwd)"
+
+    # Find trunk-recorder binary (use absolute paths)
     TR_BIN=""
-    for loc in ./tr-build/build/trunk-recorder /usr/local/bin/trunk-recorder /usr/bin/trunk-recorder ~/trunk-recorder/build/trunk-recorder; do
+    for loc in "$PROJECT_ROOT/tr-build/build/trunk-recorder" /usr/local/bin/trunk-recorder /usr/bin/trunk-recorder ~/trunk-recorder/build/trunk-recorder; do
         if [[ -x "$loc" ]]; then
             TR_BIN="$loc"
             break
@@ -55,11 +58,20 @@ start: _kill-ports _ensure-built
     # Start trunk-recorder if available
     TR_PID=""
     if [[ -n "$TR_BIN" ]]; then
-        echo "Starting trunk-recorder..."
-        cd trunk-recorder && "$TR_BIN" --config=config.json > /tmp/trunk-recorder-output.log 2>&1 &
+        echo "Starting trunk-recorder from: $TR_BIN"
+        cd "$PROJECT_ROOT/trunk-recorder" && "$TR_BIN" --config=config.json > /tmp/trunk-recorder-output.log 2>&1 &
         TR_PID=$!
-        cd ..
+        cd "$PROJECT_ROOT"
         sleep 3
+
+        # Verify trunk-recorder is still running
+        if kill -0 $TR_PID 2>/dev/null; then
+            echo "trunk-recorder started successfully (PID: $TR_PID)"
+        else
+            echo "Warning: trunk-recorder failed to start. Check /tmp/trunk-recorder-output.log"
+            cat /tmp/trunk-recorder-output.log | tail -10
+            TR_PID=""
+        fi
     else
         echo "Warning: trunk-recorder not found (spectrum analyzer won't work)"
         echo "Build it with: just build-trunk-recorder"
@@ -242,30 +254,117 @@ logs:
 # Show system status
 status:
     #!/usr/bin/env bash
-    echo "Radio Scanner Status"
+    GREEN=$'\033[32m'
+    RED=$'\033[31m'
+    YELLOW=$'\033[33m'
+    DIM=$'\033[90m'
+    RESET=$'\033[0m'
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Radio Scanner Status"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "Ports:"
-    for port in 3000 3001 5173 9000; do
-        pid=$(lsof -ti :$port 2>/dev/null || true)
+
+    # Helper function to get port description
+    port_desc() {
+        case $1 in
+            3000) echo "HTTP Server + WebSocket" ;;
+            3001) echo "trunk-recorder Status WS" ;;
+            5173) echo "Vite Dev Server" ;;
+            9000) echo "Audio UDP Stream" ;;
+            9001) echo "FFT UDP Stream" ;;
+            *) echo "Unknown" ;;
+        esac
+    }
+
+    echo "  TCP PORTS"
+    echo "  ─────────────────────────────────────────────────────────────────"
+    for port in 3000 3001 5173; do
+        pid=$(lsof -ti TCP:$port -sTCP:LISTEN 2>/dev/null | head -1 || true)
+        desc=$(port_desc $port)
         if [[ -n "$pid" ]]; then
-            proc=$(ps -p $pid -o comm= 2>/dev/null || echo "unknown")
-            echo "  :$port  ✓ $proc (PID: $pid)"
+            proc=$(ps -p $pid -o comm= 2>/dev/null | xargs basename 2>/dev/null || echo "unknown")
+            printf "  %-6s %-26s ${GREEN}● LISTENING${RESET}  %s (PID %s)\n" ":$port" "$desc" "$proc" "$pid"
         else
-            echo "  :$port  ✗ not in use"
+            printf "  %-6s %-26s ${DIM}○ not in use${RESET}\n" ":$port" "$desc"
         fi
     done
+
     echo ""
-    echo "RTL-SDR:"
+    echo "  UDP PORTS"
+    echo "  ─────────────────────────────────────────────────────────────────"
+    for port in 9000 9001; do
+        pid=$(lsof -ti UDP:$port 2>/dev/null | head -1 || true)
+        desc=$(port_desc $port)
+        if [[ -n "$pid" ]]; then
+            proc=$(ps -p $pid -o comm= 2>/dev/null | xargs basename 2>/dev/null || echo "unknown")
+            printf "  %-6s %-26s ${GREEN}● LISTENING${RESET}  %s (PID %s)\n" ":$port" "$desc" "$proc" "$pid"
+        else
+            printf "  %-6s %-26s ${DIM}○ not in use${RESET}\n" ":$port" "$desc"
+        fi
+    done
+
+    echo ""
+    echo "  PROCESSES"
+    echo "  ─────────────────────────────────────────────────────────────────"
+
+    # Check Node.js server
+    node_pid=$(pgrep -f "node.*dist/index.js" 2>/dev/null | head -1 || true)
+    if [[ -n "$node_pid" ]]; then
+        printf "  %-20s ${GREEN}● RUNNING${RESET}   PID %s\n" "Node.js Server" "$node_pid"
+    else
+        printf "  %-20s ${DIM}○ not running${RESET}\n" "Node.js Server"
+    fi
+
+    # Check trunk-recorder
+    tr_pid=$(pgrep -f "trunk-recorder.*config" 2>/dev/null | head -1 || true)
+    if [[ -n "$tr_pid" ]]; then
+        printf "  %-20s ${GREEN}● RUNNING${RESET}   PID %s\n" "trunk-recorder" "$tr_pid"
+    else
+        printf "  %-20s ${DIM}○ not running${RESET}\n" "trunk-recorder"
+    fi
+
+    # Check Vite dev server
+    vite_pid=$(pgrep -f "vite" 2>/dev/null | head -1 || true)
+    if [[ -n "$vite_pid" ]]; then
+        printf "  %-20s ${GREEN}● RUNNING${RESET}   PID %s\n" "Vite Dev Server" "$vite_pid"
+    else
+        printf "  %-20s ${DIM}○ not running${RESET}\n" "Vite Dev Server"
+    fi
+
+    echo ""
+    echo "  HARDWARE"
+    echo "  ─────────────────────────────────────────────────────────────────"
     if command -v rtl_test &>/dev/null; then
         if rtl_test -t 2>&1 | grep -q "Found 1 device"; then
-            echo "  ✓ Device connected"
+            printf "  %-20s ${GREEN}● CONNECTED${RESET}\n" "RTL-SDR"
         else
-            echo "  ✗ No device found"
+            printf "  %-20s ${RED}● NOT FOUND${RESET}\n" "RTL-SDR"
         fi
     else
-        echo "  ? rtl_test not installed"
+        printf "  %-20s ${YELLOW}? rtl_test not installed${RESET}\n" "RTL-SDR"
     fi
+
+    # Check API health if server is running
+    echo ""
+    echo "  API HEALTH"
+    echo "  ─────────────────────────────────────────────────────────────────"
+    if [[ -n "$node_pid" ]]; then
+        health=$(curl -s --connect-timeout 2 http://localhost:3000/api/health 2>/dev/null || echo "")
+        if echo "$health" | grep -q '"status":"ok"'; then
+            clients=$(echo "$health" | grep -o '"clients":[0-9]*' | cut -d: -f2)
+            printf "  %-20s ${GREEN}● OK${RESET}        %s WebSocket client(s)\n" "API Status" "${clients:-0}"
+        else
+            printf "  %-20s ${RED}● ERROR${RESET}     Could not reach API\n" "API Status"
+        fi
+    else
+        printf "  %-20s ${DIM}○ Server not running${RESET}\n" "API Status"
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
 
 # Check API health
 health:

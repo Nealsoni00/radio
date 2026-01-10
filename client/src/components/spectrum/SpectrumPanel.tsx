@@ -5,13 +5,14 @@ import { SpectrumDisplay } from './SpectrumDisplay';
 import { WaterfallDisplay } from './WaterfallDisplay';
 import { SpectrumControls } from './SpectrumControls';
 import { SpectrumRecorder } from './SpectrumRecorder';
+import { ControlChannelFeed } from '../control/ControlChannelFeed';
 
 interface SpectrumPanelProps {
   onEnableChange?: (enabled: boolean) => void;
 }
 
 export function SpectrumPanel({ onEnableChange }: SpectrumPanelProps) {
-  const { isEnabled, showSpectrum, showWaterfall, setEnabled, currentFFT, clearHistory } =
+  const { isEnabled, showSpectrum, showWaterfall, setEnabled, currentFFT } =
     useFFTStore();
   const { isConnected, trunkRecorderConnected } = useConnectionStore();
   const [waitingTime, setWaitingTime] = useState(0);
@@ -38,9 +39,7 @@ export function SpectrumPanel({ onEnableChange }: SpectrumPanelProps) {
   const handleToggle = () => {
     const newEnabled = !isEnabled;
     setEnabled(newEnabled);
-    if (!newEnabled) {
-      clearHistory();
-    }
+    // Don't clear history when stopping - allows seamless transition to recordings
     onEnableChange?.(newEnabled);
   };
 
@@ -82,9 +81,21 @@ export function SpectrumPanel({ onEnableChange }: SpectrumPanelProps) {
                 <WaterfallDisplay height={200} />
               </div>
             )}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <SpectrumControls />
               <SpectrumRecorder />
+              {/* Control Channel Feed */}
+              <div className="bg-slate-800/50 rounded-lg overflow-hidden flex flex-col">
+                <div className="px-3 py-2 border-b border-slate-700 bg-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-300">Control Channel</span>
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live"></span>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-hidden h-[200px]">
+                  <ControlChannelFeed compact />
+                </div>
+              </div>
             </div>
           </>
         ) : (

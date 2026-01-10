@@ -16,6 +16,12 @@ import { callRoutes } from './routes/api/calls.js';
 import { talkgroupRoutes } from './routes/api/talkgroups.js';
 import { audioRoutes } from './routes/api/audio.js';
 import { radioReferenceRoutes } from './routes/api/radioreference.js';
+import { spectrumRoutes } from './routes/api/spectrum.js';
+import { FFTRecorder } from './services/spectrum/fft-recorder.js';
+import { FFTReplayer } from './services/spectrum/fft-replayer.js';
+import { frequencyScanner } from './services/spectrum/frequency-scanner.js';
+import { channelTracker } from './services/spectrum/channel-tracker.js';
+import { detectRTLDevices } from './services/sdr/rtl-detect.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 /**
@@ -54,21 +60,29 @@ async function main() {
         root: join(__dirname, '../../client/dist'),
         prefix: '/',
     });
-    // Register API routes
-    await app.register(callRoutes);
-    await app.register(talkgroupRoutes);
-    await app.register(audioRoutes);
-    await app.register(radioReferenceRoutes);
     // Initialize trunk-recorder status server (trunk-recorder connects to us)
     const trStatusServer = new TrunkRecorderStatusServer(3001);
     // Initialize audio receiver
     const audioReceiver = new AudioReceiver(config.trunkRecorder.audioPort);
     // Initialize FFT receiver for spectrum visualization
     const fftReceiver = new FFTReceiver(config.trunkRecorder.fftPort);
+    // Initialize FFT recording and replay services
+    const fftRecorder = new FFTRecorder();
+    const fftReplayer = new FFTReplayer(fftRecorder);
     // Initialize file watcher for recordings
     const fileWatcher = new FileWatcher(config.trunkRecorder.audioDir);
     // Initialize log watcher for control channel events
-    const logWatcher = new LogWatcher('/tmp/trunk-recorder.log');
+    // Try the output log first (used by `just start`), fall back to direct log
+    const trLogPath = (await import('fs')).existsSync('/tmp/trunk-recorder-output.log')
+        ? '/tmp/trunk-recorder-output.log'
+        : '/tmp/trunk-recorder.log';
+    const logWatcher = new LogWatcher(trLogPath);
+    // Register API routes
+    await app.register(callRoutes);
+    await app.register(talkgroupRoutes);
+    await app.register(audioRoutes);
+    await app.register(radioReferenceRoutes);
+    await app.register(spectrumRoutes({ recorder: fftRecorder, replayer: fftReplayer }));
     // Health check endpoint
     app.get('/api/health', async () => ({
         status: 'ok',
@@ -98,6 +112,10 @@ async function main() {
             maxFrequency: config.sdr.centerFrequency + halfBandwidth,
         };
     });
+    // RTL-SDR device detection endpoint
+    app.get('/api/sdr/devices', async () => {
+        return detectRTLDevices();
+    });
     // Control channel events endpoint (for initial load)
     app.get('/api/control-channel', async (request) => {
         const { count = '100' } = request.query;
@@ -110,8 +128,18 @@ async function main() {
     const httpServer = app.server;
     // Initialize broadcast server (WebSocket)
     const broadcastServer = new BroadcastServer(httpServer);
+    // Initialize channel tracker with control channels from config
+    channelTracker.setControlChannels(config.sdr.controlChannels);
+    console.log(`Channel tracker initialized with control channels: ${config.sdr.controlChannels.map((f) => (f / 1e6).toFixed(6)).join(', ')} MHz`);
     trStatusServer.on('callStart', (call) => {
         console.log(`Call started: TG ${call.talkgroup} (${call.talkgrouptag})`);
+        // Track active call for spectrum markers
+        channelTracker.addActiveCall({
+            id: call.id,
+            frequency: call.freq,
+            talkgroupId: call.talkgroup,
+            alphaTag: call.talkgrouptag,
+        });
         broadcastServer.broadcastCallStart({
             id: call.id,
             talkgroupId: call.talkgroup,
@@ -124,6 +152,8 @@ async function main() {
     });
     trStatusServer.on('callEnd', (call) => {
         console.log(`Call ended: TG ${call.talkgroup} (${call.talkgrouptag}) - ${call.length}s`);
+        // Remove from active calls for spectrum markers
+        channelTracker.removeCall(call.id);
         // Save to database
         processCompletedCall(call, call.filename);
         // Broadcast to clients
@@ -143,6 +173,13 @@ async function main() {
         });
     });
     trStatusServer.on('callsActive', (calls) => {
+        // Update channel tracker with full list of active calls
+        channelTracker.updateActiveCalls(calls.map((call) => ({
+            id: call.id,
+            frequency: call.freq,
+            talkgroupId: call.talkgroup,
+            alphaTag: call.talkgrouptag,
+        })));
         broadcastServer.broadcastActiveCalls(calls.map((call) => ({
             id: call.id,
             talkgroupId: call.talkgroup,
@@ -157,6 +194,15 @@ async function main() {
         broadcastServer.broadcastAudio(packet);
     });
     fftReceiver.on('fft', (packet) => {
+        // Broadcast live FFT to clients
+        broadcastServer.broadcastFFT(packet);
+        // Also record if recording is active
+        fftRecorder.addPacket(packet);
+        // Update frequency scanner with latest FFT data
+        frequencyScanner.updateFFT(packet);
+    });
+    // Replayer broadcasts recorded FFT packets
+    fftReplayer.on('fft', (packet) => {
         broadcastServer.broadcastFFT(packet);
     });
     fileWatcher.on('call', (call, audioPath) => {
@@ -181,6 +227,8 @@ async function main() {
     // Set up log watcher event handler
     logWatcher.on('event', (event) => {
         broadcastServer.broadcastControlChannel(event);
+        // Also record control channel events if recording
+        fftRecorder.addControlChannelEvent(event);
     });
     // Start services
     audioReceiver.start();

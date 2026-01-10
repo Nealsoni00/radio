@@ -20,6 +20,7 @@ export declare const config: {
     sdr: {
         centerFrequency: number;
         sampleRate: number;
+        controlChannels: number[];
     };
     radioReference: {
         username: string;
