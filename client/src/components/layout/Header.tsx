@@ -1,15 +1,24 @@
 import { useConnectionStore, useAudioStore } from '../../store';
+import { useSystemStore } from '../../store/system';
 
 export function Header() {
   const { isConnected, decodeRate } = useConnectionStore();
   const { isLiveEnabled, setLiveEnabled, isPlaying } = useAudioStore();
+  const { activeSystem } = useSystemStore();
+
+  // Get a shorter display name for the active system
+  const systemDisplayName = activeSystem
+    ? activeSystem.name.split(',')[0].replace(' Trunking System', '').replace(' P25', '')
+    : 'No System Active';
 
   return (
     <header className="bg-slate-800 border-b border-slate-700 px-4 py-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-bold text-white">Radio Scanner</h1>
-          <span className="text-sm text-slate-400">Maricopa County RWC</span>
+          <span className={`text-sm ${activeSystem ? 'text-green-400' : 'text-slate-500'}`}>
+            {systemDisplayName}
+          </span>
         </div>
 
         <div className="flex items-center gap-6">

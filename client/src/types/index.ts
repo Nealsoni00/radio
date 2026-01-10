@@ -57,13 +57,27 @@ export interface ControlChannelEvent {
   message: string;
 }
 
+export interface ActiveSystemInfo {
+  id: number;
+  name: string;
+  shortName: string;
+  type: string;
+  stateAbbrev: string;
+  countyName: string;
+  centerFrequency: number;
+  bandwidth: number;
+  controlChannels: number[];
+  modulation: string;
+}
+
 export interface ServerMessage {
-  type: 'connected' | 'callStart' | 'callEnd' | 'callsActive' | 'newRecording' | 'controlChannel' | 'rates' | 'error';
+  type: 'connected' | 'callStart' | 'callEnd' | 'callsActive' | 'newRecording' | 'controlChannel' | 'rates' | 'systemChanged' | 'error';
   clientId?: string;
   call?: Partial<Call> & { audioUrl?: string; talkgroupId?: number; alphaTag?: string };
   calls?: Partial<Call>[];
   event?: ControlChannelEvent;
   rates?: Record<string, { decoderate: number }>;
+  system?: ActiveSystemInfo | null;
   error?: string;
 }
 

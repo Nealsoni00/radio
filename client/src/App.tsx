@@ -47,10 +47,10 @@ function LiveView() {
         <TalkgroupFilter />
       </aside>
 
-      {/* Resize handle for left sidebar */}
+      {/* Resize handle for sidebar */}
       <ResizeHandle
         direction="horizontal"
-        onDrag={updateSidebarWidth}
+        onDrag={(delta) => updateSidebarWidth(delta)}
       />
 
       {/* Main content - split view with calls and control channel */}

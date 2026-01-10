@@ -1,2 +1,2 @@
 export { Header } from './Header';
-export { ResizablePanel, ResizeHandle } from './ResizablePanel';
+export { ResizablePanel, ResizeHandle, CornerResizeHandle } from './ResizablePanel';

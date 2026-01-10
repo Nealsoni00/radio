@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useAudioStore, useTalkgroupsStore } from '../../store';
+import { useCallsStore } from '../../store/calls';
+import { useWebSocket } from '../../hooks/useWebSocket';
 
 interface Position {
   x: number;
@@ -11,6 +13,24 @@ interface ActiveCall {
   alphaTag?: string;
   frequency?: number;
   startTime: number;
+}
+
+// Format relative time (e.g., "5s", "2m", "1h")
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const seconds = Math.floor((now - timestamp * 1000) / 1000);
+
+  if (seconds < 0) return 'now';
+  if (seconds < 60) return `${seconds}s`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
 }
 
 // PCM Player with built-in analyzer for visualization
@@ -120,11 +140,66 @@ export function FloatingAudioPlayer() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState<Position>({ x: 0, y: 0 });
   const [isMinimized, setIsMinimized] = useState(false);
+  const [showTalkgroups, setShowTalkgroups] = useState(false);
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [isReceivingAudio, setIsReceivingAudio] = useState(false);
 
-  const { isLiveEnabled, volume, setVolume, setLiveEnabled, setLiveStream } = useAudioStore();
-  const { selectedTalkgroups } = useTalkgroupsStore();
+  const {
+    isLiveEnabled,
+    volume,
+    setVolume,
+    setLiveEnabled,
+    setLiveStream,
+  } = useAudioStore();
+
+  // Use the talkgroups store's filter for controlling which talkgroups to stream
+  const {
+    talkgroups,
+    filterMode,
+    selectAll,
+    clearSelection,
+    toggleTalkgroup,
+    isVisible,
+  } = useTalkgroupsStore();
+  const { calls } = useCallsStore();
+  const { enableAudio } = useWebSocket();
+
+  // Send enableAudio when this component mounts (since it only shows when isLiveEnabled=true)
+  useEffect(() => {
+    console.log('[FloatingAudioPlayer] Mounted - sending enableAudio(true)');
+    enableAudio(true);
+
+    return () => {
+      console.log('[FloatingAudioPlayer] Unmounting - sending enableAudio(false)');
+      enableAudio(false);
+    };
+  }, [enableAudio]);
+
+  // Get last transmission time for each talkgroup
+  const talkgroupData = useMemo(() => {
+    const dataMap = new Map<number, { lastTime: number }>();
+    calls.forEach((call) => {
+      const existing = dataMap.get(call.talkgroup_id);
+      const callTime = call.start_time;
+      if (!existing || callTime > existing.lastTime) {
+        dataMap.set(call.talkgroup_id, { lastTime: callTime });
+      }
+    });
+    return dataMap;
+  }, [calls]);
+
+  // Get all talkgroups sorted by recent activity
+  const sortedTalkgroups = useMemo(() => {
+    // Sort: recent activity first, then alphabetically by group_name/alpha_tag
+    return [...talkgroups].sort((a, b) => {
+      const aRecent = talkgroupData.get(a.id)?.lastTime || 0;
+      const bRecent = talkgroupData.get(b.id)?.lastTime || 0;
+      if (aRecent !== bRecent) return bRecent - aRecent; // More recent first
+      const aName = a.group_name || a.alpha_tag || '';
+      const bName = b.group_name || b.alpha_tag || '';
+      return aName.localeCompare(bName);
+    });
+  }, [talkgroups, talkgroupData]);
 
   // Save position to localStorage
   useEffect(() => {
@@ -136,8 +211,8 @@ export function FloatingAudioPlayer() {
     (event: CustomEvent) => {
       const { talkgroupId, pcmData, metadata } = event.detail;
 
-      // Check if we're subscribed to this talkgroup
-      const isSubscribed = selectedTalkgroups.size === 0 || selectedTalkgroups.has(talkgroupId);
+      // Check if we're subscribed to this talkgroup based on the talkgroups filter
+      const isSubscribed = isVisible(talkgroupId);
 
       if (isLiveEnabled && isSubscribed && playerRef.current) {
         playerRef.current.feed(pcmData);
@@ -164,7 +239,7 @@ export function FloatingAudioPlayer() {
         });
       }
     },
-    [isLiveEnabled, selectedTalkgroups, setLiveStream]
+    [isLiveEnabled, isVisible, setLiveStream]
   );
 
   // Initialize player and listen for audio events
@@ -192,7 +267,7 @@ export function FloatingAudioPlayer() {
         playerRef.current = null;
       };
     }
-  }, [isLiveEnabled, handleAudioChunk, volume]);
+  }, [isLiveEnabled, handleAudioChunk, volume, setLiveStream]);
 
   // Update volume
   useEffect(() => {
@@ -311,7 +386,7 @@ export function FloatingAudioPlayer() {
 
   // Drag handlers
   const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('button, input')) return;
+    if ((e.target as HTMLElement).closest('button, input, .talkgroup-list')) return;
     e.preventDefault();
     setIsDragging(true);
     setDragOffset({
@@ -349,6 +424,11 @@ export function FloatingAudioPlayer() {
   };
 
   if (!isLiveEnabled) return null;
+
+  // Use filterMode from talkgroups store
+  const isStreamingAll = filterMode === 'all';
+  const isMuted = filterMode === 'none';
+  const visibleCount = isStreamingAll ? talkgroups.length : isMuted ? 0 : talkgroups.filter(tg => isVisible(tg.id)).length;
 
   return (
     <div
@@ -461,12 +541,103 @@ export function FloatingAudioPlayer() {
             <span className="text-xs text-slate-500 w-10 text-right font-mono">{Math.round(volume * 100)}%</span>
           </div>
 
-          {/* Subscribed Talkgroups Info */}
-          <div className="px-3 pb-3 text-xs text-slate-500">
-            {selectedTalkgroups.size === 0 ? (
-              'Listening to all talkgroups'
-            ) : (
-              `Listening to ${selectedTalkgroups.size} talkgroup${selectedTalkgroups.size !== 1 ? 's' : ''}`
+          {/* Talkgroup Selection Controls */}
+          <div className="px-3 pb-3 border-t border-slate-700/50 pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <button
+                onClick={() => setShowTalkgroups(!showTalkgroups)}
+                className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors"
+              >
+                <svg
+                  className={`w-3 h-3 transition-transform ${showTalkgroups ? 'rotate-90' : ''}`}
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                </svg>
+                {isStreamingAll ? (
+                  `Listening to ${talkgroups.length} talkgroups`
+                ) : isMuted ? (
+                  'Muted (0 talkgroups)'
+                ) : (
+                  `Listening to ${visibleCount} talkgroup${visibleCount !== 1 ? 's' : ''}`
+                )}
+              </button>
+              <div className="flex gap-1">
+                <button
+                  onClick={selectAll}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    isStreamingAll
+                      ? 'bg-green-600 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                  title="Listen to all talkgroups"
+                >
+                  All
+                </button>
+                <button
+                  onClick={clearSelection}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    isMuted
+                      ? 'bg-red-600 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                  title="Mute all talkgroups"
+                >
+                  None
+                </button>
+              </div>
+            </div>
+
+            {/* Expandable Talkgroup List */}
+            {showTalkgroups && (
+              <div className="talkgroup-list max-h-48 overflow-y-auto rounded-lg bg-slate-800/50 border border-slate-700/50">
+                {sortedTalkgroups.length === 0 ? (
+                  <div className="p-3 text-xs text-slate-500 text-center">
+                    No talkgroups available.
+                  </div>
+                ) : (
+                  sortedTalkgroups.map((tg) => {
+                    const isStreaming = isVisible(tg.id);
+                    const lastTime = talkgroupData.get(tg.id)?.lastTime;
+                    // Build the display name - prefer group_name + description
+                    const displayName = tg.group_name
+                      ? `${tg.group_name}${tg.description ? ` - ${tg.description}` : ''}`
+                      : tg.description || tg.alpha_tag || `TG ${tg.id}`;
+                    return (
+                      <button
+                        key={tg.id}
+                        onClick={() => toggleTalkgroup(tg.id)}
+                        className={`w-full px-2 py-1.5 text-left transition-colors border-b border-slate-700/30 last:border-b-0 ${
+                          isStreaming
+                            ? 'bg-green-900/20 hover:bg-green-900/30'
+                            : 'hover:bg-slate-700/50'
+                        }`}
+                        title={displayName}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className={`w-4 h-4 flex items-center justify-center text-xs flex-shrink-0 mt-0.5 ${
+                            isStreaming ? 'text-green-400' : 'text-slate-500'
+                          }`}>
+                            {isStreaming ? '🔊' : '🔇'}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-sm truncate ${isStreaming ? 'text-white' : 'text-slate-400'}`}>
+                              {displayName}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
+                              <span>TG {tg.id}</span>
+                              {lastTime && (
+                                <span className="text-slate-400">{formatRelativeTime(lastTime)} ago</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             )}
           </div>
         </>

@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { useCallsStore, useConnectionStore, useAudioStore, useControlChannelStore } from '../store';
 import { useFFTStore } from '../store/fft';
+import { useSystemStore } from '../store/system';
 import type { ServerMessage, ClientMessage, Call } from '../types';
 
 // Singleton WebSocket manager - shared across all components
@@ -8,6 +9,7 @@ class WebSocketManager {
   private ws: WebSocket | null = null;
   private reconnectTimeout: number | null = null;
   private connectionCount = 0;
+  private pendingMessages: ClientMessage[] = [];
 
   getSocket(): WebSocket | null {
     return this.ws;
@@ -32,6 +34,16 @@ class WebSocketManager {
       useConnectionStore.getState().setConnected(true);
       // Subscribe to all talkgroups by default
       ws.send(JSON.stringify({ type: 'subscribeAll' } as ClientMessage));
+
+      // Send any pending messages that were queued while connecting
+      if (this.pendingMessages.length > 0) {
+        console.log(`[WS] Sending ${this.pendingMessages.length} pending messages`);
+        this.pendingMessages.forEach(msg => {
+          console.log('[WS] Sending queued message:', msg.type);
+          ws.send(JSON.stringify(msg));
+        });
+        this.pendingMessages = [];
+      }
     };
 
     ws.onmessage = (event) => {
@@ -84,8 +96,16 @@ class WebSocketManager {
   }
 
   send(message: ClientMessage): void {
+    console.log('[WS] Sending message:', message.type, 'readyState:', this.ws?.readyState);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
+      console.log('[WS] Message sent successfully');
+    } else if (this.ws?.readyState === WebSocket.CONNECTING) {
+      // Queue message to be sent when connection opens
+      console.log('[WS] Connection not ready, queueing message:', message.type);
+      this.pendingMessages.push(message);
+    } else {
+      console.warn('[WS] Cannot send - WebSocket not open, state:', this.ws?.readyState);
     }
   }
 
@@ -106,6 +126,7 @@ class WebSocketManager {
     const { setDecodeRate } = useConnectionStore.getState();
     const { setPlaying, setCurrentTalkgroup, addToQueue } = useAudioStore.getState();
     const { addEvent: addControlChannelEvent } = useControlChannelStore.getState();
+    const { setActiveSystem } = useSystemStore.getState();
 
     switch (message.type) {
       case 'connected':
@@ -187,6 +208,11 @@ class WebSocketManager {
         if (message.event) {
           addControlChannelEvent(message.event);
         }
+        break;
+
+      case 'systemChanged':
+        console.log('System changed via WebSocket:', message.system);
+        setActiveSystem(message.system ?? null);
         break;
 
       case 'error':

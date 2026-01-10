@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useConnectionStore, useAudioStore, useCallsStore } from '../../store';
 import { useFFTStore } from '../../store/fft';
+import { useSystemStore } from '../../store/system';
 import { getHealth } from '../../services/api';
 
 function formatFrequency(freq: number): string {
@@ -12,6 +13,7 @@ export function SystemStatus() {
   const { sdrConfig, isLiveEnabled, liveStream, audioQueue, fetchSDRConfig } = useAudioStore();
   const { isEnabled: fftEnabled, currentFFT } = useFFTStore();
   const { calls } = useCallsStore();
+  const { activeSystem, fetchActiveSystem } = useSystemStore();
   const [health, setHealth] = useState<{
     trunkRecorder: boolean;
     fileWatcher: boolean;
@@ -21,10 +23,11 @@ export function SystemStatus() {
   } | null>(null);
   const [serverReachable, setServerReachable] = useState(false);
 
-  // Fetch SDR config on mount
+  // Fetch SDR config and active system on mount
   useEffect(() => {
     fetchSDRConfig();
-  }, [fetchSDRConfig]);
+    fetchActiveSystem();
+  }, [fetchSDRConfig, fetchActiveSystem]);
 
   useEffect(() => {
     const fetchHealth = async () => {
@@ -72,6 +75,28 @@ export function SystemStatus() {
 
   return (
     <div className="px-4 py-2 bg-slate-800 border-t border-slate-700">
+      {/* Active System Banner */}
+      {activeSystem && (
+        <div className="flex items-center justify-between text-xs mb-2 px-3 py-1.5 bg-green-900/30 border border-green-700/50 rounded">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-green-400 font-medium">Active System:</span>
+            </div>
+            <span className="text-white font-semibold">{activeSystem.name}</span>
+            <span className="text-slate-400">
+              ({activeSystem.stateAbbrev}{activeSystem.countyName ? ` - ${activeSystem.countyName}` : ''})
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-slate-400">
+            <span>Center: <span className="font-mono text-cyan-400">{formatFrequency(activeSystem.centerFrequency)} MHz</span></span>
+            <span>BW: <span className="font-mono text-white">{(activeSystem.bandwidth / 1000000).toFixed(1)} MHz</span></span>
+            <span>Control: <span className="font-mono text-white">{activeSystem.controlChannels.length}</span></span>
+            <span className="px-1.5 py-0.5 bg-slate-700 rounded text-slate-300">{activeSystem.modulation.toUpperCase()}</span>
+          </div>
+        </div>
+      )}
+
       {/* Top row: Status indicators */}
       <div className="flex items-center justify-between text-xs mb-2">
         <div className="flex items-center gap-3">
@@ -143,8 +168,29 @@ export function SystemStatus() {
               <span className="text-red-400">Not connected</span>
             )}
           </div>
-          {/* Band info separator */}
-          {sdrConfig && (
+          {/* Band info - prefer active system over static config */}
+          {activeSystem ? (
+            <>
+              <div className="border-l border-slate-600 pl-4 flex items-center gap-2">
+                <span className="text-slate-500">Center:</span>
+                <span className="font-mono text-cyan-400">
+                  {formatFrequency(activeSystem.centerFrequency)} MHz
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">BW:</span>
+                <span className="font-mono text-white">
+                  {(activeSystem.bandwidth / 1000000).toFixed(1)} MHz
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">Control:</span>
+                <span className="font-mono text-white">
+                  {activeSystem.controlChannels.length} ch
+                </span>
+              </div>
+            </>
+          ) : sdrConfig ? (
             <>
               <div className="border-l border-slate-600 pl-4 flex items-center gap-2">
                 <span className="text-slate-500">Band:</span>
@@ -165,10 +211,9 @@ export function SystemStatus() {
                 </span>
               </div>
             </>
-          )}
-          {!sdrConfig && serverReachable && (
+          ) : serverReachable ? (
             <span className="text-slate-500">Loading band config...</span>
-          )}
+          ) : null}
         </div>
         <div className="flex items-center gap-4">
           {liveStream && isConnected && (

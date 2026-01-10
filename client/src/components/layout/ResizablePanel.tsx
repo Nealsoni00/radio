@@ -10,6 +10,7 @@ interface ResizablePanelProps {
   handlePosition?: 'start' | 'end';
   className?: string;
   onResize?: (size: number) => void;
+  deferResize?: boolean; // Only apply size on drag end
 }
 
 /**
@@ -23,6 +24,7 @@ interface ResizablePanelProps {
  * @param handlePosition - Position of the drag handle ('start' or 'end')
  * @param className - Additional CSS classes
  * @param onResize - Callback when size changes
+ * @param deferResize - If true, only apply size on mouse up (shows preview during drag)
  */
 export function ResizablePanel({
   children,
@@ -34,6 +36,7 @@ export function ResizablePanel({
   handlePosition = 'end',
   className = '',
   onResize,
+  deferResize = false,
 }: ResizablePanelProps) {
   const [size, setSize] = useState(() => {
     if (storageKey) {
@@ -47,6 +50,9 @@ export function ResizablePanel({
     }
     return defaultSize;
   });
+
+  // Preview size shown during deferred drag
+  const [previewSize, setPreviewSize] = useState<number | null>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -83,7 +89,12 @@ export function ResizablePanel({
       }
 
       const newSize = Math.min(maxSize, Math.max(minSize, startSize.current + delta));
-      setSize(newSize);
+
+      if (deferResize) {
+        setPreviewSize(newSize);
+      } else {
+        setSize(newSize);
+      }
     };
 
     const handleMouseUp = () => {
@@ -91,6 +102,12 @@ export function ResizablePanel({
         isDragging.current = false;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+
+        // Apply the preview size on mouse up if deferred
+        if (deferResize && previewSize !== null) {
+          setSize(previewSize);
+          setPreviewSize(null);
+        }
       }
     };
 
@@ -101,10 +118,11 @@ export function ResizablePanel({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [direction, handlePosition, minSize, maxSize]);
+  }, [direction, handlePosition, minSize, maxSize, deferResize, previewSize]);
 
   const isHorizontal = direction === 'horizontal';
-  const sizeStyle = isHorizontal ? { width: size } : { height: size };
+  const displaySize = previewSize !== null ? previewSize : size;
+  const sizeStyle = isHorizontal ? { width: displaySize } : { height: displaySize };
 
   const handleClasses = isHorizontal
     ? 'w-1 cursor-col-resize hover:bg-blue-500 active:bg-blue-600'
@@ -120,7 +138,7 @@ export function ResizablePanel({
   return (
     <div
       ref={panelRef}
-      className={`flex ${isHorizontal ? 'flex-row' : 'flex-col'} ${className}`}
+      className={`flex ${isHorizontal ? 'flex-row' : 'flex-col'} ${className} ${previewSize !== null ? 'opacity-80' : ''}`}
       style={sizeStyle}
     >
       {handlePosition === 'start' && handleElement}
@@ -139,23 +157,29 @@ export function ResizablePanel({
 interface ResizeHandleProps {
   direction: 'horizontal' | 'vertical';
   onDrag: (delta: number) => void;
+  onDragEnd?: () => void;
   className?: string;
+  deferResize?: boolean;
 }
 
-export function ResizeHandle({ direction, onDrag, className = '' }: ResizeHandleProps) {
+export function ResizeHandle({ direction, onDrag, onDragEnd, className = '', deferResize = false }: ResizeHandleProps) {
   const isDragging = useRef(false);
   const lastPos = useRef(0);
+  const totalDelta = useRef(0);
   const onDragRef = useRef(onDrag);
+  const onDragEndRef = useRef(onDragEnd);
 
-  // Keep the callback ref up to date
+  // Keep the callback refs up to date
   useEffect(() => {
     onDragRef.current = onDrag;
-  }, [onDrag]);
+    onDragEndRef.current = onDragEnd;
+  }, [onDrag, onDragEnd]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isDragging.current = true;
     lastPos.current = direction === 'horizontal' ? e.clientX : e.clientY;
+    totalDelta.current = 0;
     document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize';
     document.body.style.userSelect = 'none';
   }, [direction]);
@@ -167,7 +191,11 @@ export function ResizeHandle({ direction, onDrag, className = '' }: ResizeHandle
       const currentPos = direction === 'horizontal' ? e.clientX : e.clientY;
       const delta = currentPos - lastPos.current;
       lastPos.current = currentPos;
-      onDragRef.current(delta);
+      totalDelta.current += delta;
+
+      if (!deferResize) {
+        onDragRef.current(delta);
+      }
     };
 
     const handleMouseUp = () => {
@@ -175,6 +203,12 @@ export function ResizeHandle({ direction, onDrag, className = '' }: ResizeHandle
         isDragging.current = false;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+
+        if (deferResize && totalDelta.current !== 0) {
+          onDragRef.current(totalDelta.current);
+        }
+        onDragEndRef.current?.();
+        totalDelta.current = 0;
       }
     };
 
@@ -185,7 +219,7 @@ export function ResizeHandle({ direction, onDrag, className = '' }: ResizeHandle
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [direction]);
+  }, [direction, deferResize]);
 
   const isHorizontal = direction === 'horizontal';
   const handleClasses = isHorizontal
@@ -201,6 +235,94 @@ export function ResizeHandle({ direction, onDrag, className = '' }: ResizeHandle
       <div className={`w-full h-full flex items-center justify-center ${isHorizontal ? 'flex-col' : 'flex-row'}`}>
         <div className={`${isHorizontal ? 'w-0.5 h-8' : 'w-8 h-0.5'} bg-slate-500 rounded-full opacity-50`} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Corner resize handle for 2D resizing (width and height simultaneously).
+ * Place this in the bottom-right corner of a panel.
+ */
+interface CornerResizeHandleProps {
+  onResize: (deltaWidth: number, deltaHeight: number) => void;
+  onResizeEnd?: () => void;
+  className?: string;
+  deferResize?: boolean;
+}
+
+export function CornerResizeHandle({ onResize, onResizeEnd, className = '', deferResize = false }: CornerResizeHandleProps) {
+  const isDragging = useRef(false);
+  const lastPos = useRef({ x: 0, y: 0 });
+  const totalDelta = useRef({ x: 0, y: 0 });
+  const onResizeRef = useRef(onResize);
+  const onResizeEndRef = useRef(onResizeEnd);
+
+  useEffect(() => {
+    onResizeRef.current = onResize;
+    onResizeEndRef.current = onResizeEnd;
+  }, [onResize, onResizeEnd]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    isDragging.current = true;
+    lastPos.current = { x: e.clientX, y: e.clientY };
+    totalDelta.current = { x: 0, y: 0 };
+    document.body.style.cursor = 'nwse-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+
+      const deltaX = e.clientX - lastPos.current.x;
+      const deltaY = e.clientY - lastPos.current.y;
+      lastPos.current = { x: e.clientX, y: e.clientY };
+      totalDelta.current.x += deltaX;
+      totalDelta.current.y += deltaY;
+
+      if (!deferResize) {
+        onResizeRef.current(deltaX, deltaY);
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging.current) {
+        isDragging.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+
+        if (deferResize && (totalDelta.current.x !== 0 || totalDelta.current.y !== 0)) {
+          onResizeRef.current(totalDelta.current.x, totalDelta.current.y);
+        }
+        onResizeEndRef.current?.();
+        totalDelta.current = { x: 0, y: 0 };
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [deferResize]);
+
+  return (
+    <div
+      className={`absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-20 group ${className}`}
+      onMouseDown={handleMouseDown}
+    >
+      {/* Corner resize icon */}
+      <svg
+        className="w-full h-full text-slate-500 group-hover:text-blue-400 transition-colors"
+        viewBox="0 0 16 16"
+        fill="currentColor"
+      >
+        <path d="M14 14H12V12H14V14ZM14 10H12V8H14V10ZM10 14H8V12H10V14Z" />
+      </svg>
     </div>
   );
 }

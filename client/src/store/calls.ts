@@ -14,6 +14,7 @@ interface CallsState {
   updateCall: (id: string, updates: Partial<Call>) => void;
   setActiveCalls: (calls: Partial<Call>[]) => void;
   selectCall: (call: Call | null) => void;
+  clearCalls: () => void;
 }
 
 export const useCallsStore = create<CallsState>((set) => ({
@@ -85,5 +86,9 @@ export const useCallsStore = create<CallsState>((set) => ({
 
   selectCall: (call) => {
     set({ selectedCall: call });
+  },
+
+  clearCalls: () => {
+    set({ calls: [], activeCalls: [], selectedCall: null });
   },
 }));

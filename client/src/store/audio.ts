@@ -46,7 +46,7 @@ interface AudioState {
 }
 
 export const useAudioStore = create<AudioState>((set, get) => ({
-  isLiveEnabled: false,
+  isLiveEnabled: true, // Default to live audio enabled
   isPlaying: false,
   currentTalkgroup: null,
   volume: AUDIO.DEFAULT_VOLUME,
@@ -78,10 +78,13 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   },
 
   clearStreamingTalkgroups: () => {
-    set({ streamingTalkgroups: new Set() });
+    // Use sentinel value -1 to indicate "none selected" (muted)
+    // This differs from empty set which means "all"
+    set({ streamingTalkgroups: new Set([-1]) });
   },
 
   streamAllTalkgroups: () => {
+    // Empty set = all talkgroups
     set({ streamingTalkgroups: new Set() });
   },
 

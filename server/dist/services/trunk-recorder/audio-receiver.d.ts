@@ -9,6 +9,8 @@ export declare class AudioReceiver extends EventEmitter {
     private socket;
     private isRunning;
     constructor(port: number);
+    private packetCount;
+    private lastLogTime;
     start(): void;
     private parsePacket;
     stop(): void;

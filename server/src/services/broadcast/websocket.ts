@@ -3,6 +3,7 @@ import type { IncomingMessage } from 'http';
 import type { Server } from 'http';
 import type { ClientMessage, ServerMessage, Call, AudioPacket, FFTPacket } from '../../types/index.js';
 import type { ControlChannelEvent } from '../trunk-recorder/log-watcher.js';
+import type { ActiveSystemInfo } from '../system/system-manager.js';
 
 interface Client {
   id: string;
@@ -64,6 +65,8 @@ export class BroadcastServer {
     const client = this.clients.get(clientId);
     if (!client) return;
 
+    console.log(`[WS Server] Received message from ${clientId}:`, message.type, message);
+
     switch (message.type) {
       case 'subscribe':
         if (message.talkgroups) {
@@ -85,7 +88,7 @@ export class BroadcastServer {
 
       case 'enableAudio':
         client.streamAudio = message.enabled ?? false;
-        console.log(`Client ${clientId} audio streaming: ${client.streamAudio}`);
+        console.log(`[WS Server] Client ${clientId} audio streaming CHANGED to: ${client.streamAudio}`);
         break;
 
       case 'enableFFT':
@@ -131,14 +134,14 @@ export class BroadcastServer {
     });
   }
 
-  // Broadcast new recording for auto-play
+  // Broadcast new recording to all clients for call list updates
+  // (streamAudio clients also get auto-play queuing on the client side)
   broadcastNewRecording(call: Partial<Call> & { audioUrl?: string }): void {
     const message: ServerMessage = { type: 'newRecording', call };
     const json = JSON.stringify(message);
 
     this.clients.forEach((client) => {
       if (client.ws.readyState !== WebSocket.OPEN) return;
-      if (!client.streamAudio) return;
       if (!this.isSubscribed(client, call.talkgroupId!)) return;
 
       client.ws.send(json);
@@ -165,6 +168,9 @@ export class BroadcastServer {
     });
   }
 
+  private audioPacketCount = 0;
+  private lastAudioLogTime = Date.now();
+
   broadcastAudio(packet: AudioPacket): void {
     // Build binary message: [4 bytes header length][JSON header][PCM data]
     const header = Buffer.from(
@@ -178,13 +184,24 @@ export class BroadcastServer {
     headerLen.writeUInt32LE(header.length, 0);
     const message = Buffer.concat([headerLen, header, packet.pcmData]);
 
+    let sentCount = 0;
+    let audioEnabledCount = 0;
     this.clients.forEach((client) => {
+      if (client.streamAudio) audioEnabledCount++;
       if (client.ws.readyState !== WebSocket.OPEN) return;
       if (!client.streamAudio) return;
       if (!this.isSubscribed(client, packet.talkgroupId)) return;
 
       client.ws.send(message);
+      sentCount++;
     });
+
+    this.audioPacketCount++;
+    const now = Date.now();
+    if (this.audioPacketCount % 50 === 0 || now - this.lastAudioLogTime > 5000) {
+      console.log(`[BroadcastServer] Audio packet #${this.audioPacketCount} TG:${packet.talkgroupId} - sent to ${sentCount}/${this.clients.size} clients (${audioEnabledCount} have audio enabled)`);
+      this.lastAudioLogTime = now;
+    }
   }
 
   broadcastFFT(packet: FFTPacket): void {
@@ -240,6 +257,21 @@ export class BroadcastServer {
       if (client.ws.readyState !== WebSocket.OPEN) return;
       client.ws.send(json);
     });
+  }
+
+  broadcastSystemChanged(system: ActiveSystemInfo | null): void {
+    const message = {
+      type: 'systemChanged',
+      system,
+    };
+    const json = JSON.stringify(message);
+
+    this.clients.forEach((client) => {
+      if (client.ws.readyState !== WebSocket.OPEN) return;
+      client.ws.send(json);
+    });
+
+    console.log(`System changed broadcast sent to ${this.clients.size} clients`);
   }
 
   getClientCount(): number {

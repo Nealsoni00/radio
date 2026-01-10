@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useCallsStore } from '../../store';
+import { useSystemStore } from '../../store/system';
 import { CallItem } from './CallItem';
 
 export function CallList() {
-  const { calls, activeCalls, selectedCall, selectCall, fetchCalls, isLoading } = useCallsStore();
+  const { calls, activeCalls, selectedCall, selectCall, isLoading } = useCallsStore();
+  const { activeSystem } = useSystemStore();
   const listRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
-
-  useEffect(() => {
-    fetchCalls({ limit: 100 });
-  }, [fetchCalls]);
 
   // Auto-scroll to new calls
   useEffect(() => {
@@ -63,9 +61,21 @@ export function CallList() {
 
       {/* Call list */}
       <div ref={listRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
-        {allCalls.length === 0 && !isLoading && (
+        {!activeSystem && (
+          <div className="p-8 text-center">
+            <svg className="w-16 h-16 mx-auto mb-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+            </svg>
+            <h3 className="text-white font-medium mb-2">Select a System</h3>
+            <p className="text-slate-400 text-sm">
+              Go to <span className="text-blue-400 font-medium">Browse Systems</span> to find and switch to a P25 radio system in your area.
+            </p>
+          </div>
+        )}
+        {activeSystem && allCalls.length === 0 && !isLoading && (
           <div className="p-8 text-center text-slate-500">
-            No calls yet. Waiting for radio traffic...
+            <div className="w-4 h-4 border-2 border-slate-600 border-t-blue-500 rounded-full animate-spin mx-auto mb-3" />
+            Listening for radio traffic on {activeSystem.shortName}...
           </div>
         )}
         {allCalls.map((call) => (

@@ -1,18 +1,15 @@
 import { useState } from 'react';
 import { useRadioReferenceStore } from '../../store/radioreference';
+import { useSystemStore } from '../../store/system';
 
 function formatFrequency(hz: number): string {
   return (hz / 1000000).toFixed(5) + ' MHz';
 }
 
 export function SystemDetails() {
-  const {
-    systemDetails,
-    isLoadingDetails,
-    selectedSystems,
-    addSelectedSystem,
-    removeSelectedSystem,
-  } = useRadioReferenceStore();
+  const { systemDetails, isLoadingDetails } = useRadioReferenceStore();
+
+  const { activeSystem, isSwitching, switchToSystem } = useSystemStore();
 
   const [activeTab, setActiveTab] = useState<'info' | 'sites' | 'talkgroups'>('info');
   const [tgFilter, setTgFilter] = useState('');
@@ -42,7 +39,9 @@ export function SystemDetails() {
   }
 
   const { system, sites, frequencies, talkgroups } = systemDetails;
-  const isSelected = selectedSystems.some((s) => s.id === system.id);
+  const isActive = activeSystem?.id === system.id;
+  const hasControlChannels = frequencies.some((f) => f.channelType === 'control');
+  const canSwitch = hasControlChannels && !isActive && !isSwitching;
 
   const filteredTalkgroups = tgFilter
     ? talkgroups.filter(
@@ -75,18 +74,21 @@ export function SystemDetails() {
               {system.stateName} {system.countyName && `- ${system.countyName}`}
             </p>
           </div>
-          <button
-            onClick={() =>
-              isSelected ? removeSelectedSystem(system.id) : addSelectedSystem(system.id)
-            }
-            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-              isSelected
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-            }`}
-          >
-            {isSelected ? 'Selected' : 'Add to My Systems'}
-          </button>
+          {hasControlChannels && (
+            <button
+              onClick={() => switchToSystem(system.id)}
+              disabled={!canSwitch}
+              className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
+                isActive
+                  ? 'bg-green-600 text-white cursor-default'
+                  : isSwitching
+                  ? 'bg-orange-600 text-white cursor-wait'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {isActive ? 'Active' : isSwitching ? 'Switching...' : 'Activate'}
+            </button>
+          )}
         </div>
 
         {/* System badges */}

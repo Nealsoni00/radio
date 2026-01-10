@@ -17,6 +17,8 @@ import { talkgroupRoutes } from './routes/api/talkgroups.js';
 import { audioRoutes } from './routes/api/audio.js';
 import { radioReferenceRoutes } from './routes/api/radioreference.js';
 import { spectrumRoutes } from './routes/api/spectrum.js';
+import { systemRoutes } from './routes/api/system.js';
+import { systemManager } from './services/system/system-manager.js';
 import { FFTRecorder } from './services/spectrum/fft-recorder.js';
 import { FFTReplayer } from './services/spectrum/fft-replayer.js';
 import { frequencyScanner } from './services/spectrum/frequency-scanner.js';
@@ -83,6 +85,9 @@ async function main() {
     await app.register(audioRoutes);
     await app.register(radioReferenceRoutes);
     await app.register(spectrumRoutes({ recorder: fftRecorder, replayer: fftReplayer }));
+    await app.register(systemRoutes);
+    // Variable to store broadcast server reference for health endpoint
+    let broadcastServer = null;
     // Health check endpoint
     app.get('/api/health', async () => ({
         status: 'ok',
@@ -91,7 +96,7 @@ async function main() {
         fileWatcher: fileWatcher.isWatching(),
         fileWatcherActive: fileWatcher.isActive(),
         audioReceiver: audioReceiver.isListening(),
-        clients: 0,
+        clients: broadcastServer?.getClientCount() ?? 0,
     }));
     // SPA fallback - serve index.html for all non-API routes (client-side routing)
     app.setNotFoundHandler(async (request, reply) => {
@@ -127,10 +132,18 @@ async function main() {
     // Create HTTP server from Fastify's server
     const httpServer = app.server;
     // Initialize broadcast server (WebSocket)
-    const broadcastServer = new BroadcastServer(httpServer);
+    broadcastServer = new BroadcastServer(httpServer);
     // Initialize channel tracker with control channels from config
     channelTracker.setControlChannels(config.sdr.controlChannels);
     console.log(`Channel tracker initialized with control channels: ${config.sdr.controlChannels.map((f) => (f / 1e6).toFixed(6)).join(', ')} MHz`);
+    // Wire up system manager events for broadcasting system changes
+    systemManager.on('systemChanged', (system) => {
+        broadcastServer.broadcastSystemChanged(system);
+        // Update channel tracker with new control channels
+        if (system) {
+            channelTracker.setControlChannels(system.controlChannels);
+        }
+    });
     trStatusServer.on('callStart', (call) => {
         console.log(`Call started: TG ${call.talkgroup} (${call.talkgrouptag})`);
         // Track active call for spectrum markers
@@ -215,6 +228,7 @@ async function main() {
             talkgroupId: call.talkgroup,
             alphaTag: call.talkgrouptag,
             groupName: call.talkgroupGroup,
+            groupTag: call.talkgroupTag,
             frequency: call.freq,
             startTime: call.startTime,
             stopTime: call.stopTime,

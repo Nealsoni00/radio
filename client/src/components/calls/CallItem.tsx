@@ -34,7 +34,7 @@ export function CallItem({ call, isSelected, onClick }: CallItemProps) {
               </span>
             )}
             <span className="font-medium text-white truncate">
-              {call.alpha_tag || `TG ${call.talkgroup_id}`}
+              {call.group_tag || call.alpha_tag || `TG ${call.talkgroup_id}`}
             </span>
           </div>
 

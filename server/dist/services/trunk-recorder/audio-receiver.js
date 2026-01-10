@@ -9,6 +9,8 @@ export class AudioReceiver extends EventEmitter {
         this.port = port;
         this.socket = dgram.createSocket('udp4');
     }
+    packetCount = 0;
+    lastLogTime = Date.now();
     start() {
         if (this.isRunning)
             return;
@@ -16,6 +18,13 @@ export class AudioReceiver extends EventEmitter {
             try {
                 const packet = this.parsePacket(msg);
                 if (packet) {
+                    this.packetCount++;
+                    // Log every 100 packets or every 5 seconds
+                    const now = Date.now();
+                    if (this.packetCount % 100 === 0 || now - this.lastLogTime > 5000) {
+                        console.log(`[AudioReceiver] Received ${this.packetCount} packets, latest TG: ${packet.talkgroupId}, size: ${packet.pcmData.length} bytes`);
+                        this.lastLogTime = now;
+                    }
                     this.emit('audio', packet);
                 }
             }

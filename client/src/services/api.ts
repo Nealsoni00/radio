@@ -3,6 +3,7 @@ import type {
   Talkgroup,
   CallSource,
   SDRConfig,
+  ActiveSystemInfo,
   RRState,
   RRCounty,
   RRSystem,
@@ -474,5 +475,46 @@ export async function scanFrequencies(frequencies: number[]): Promise<ScanResult
     const error = await response.json();
     throw new Error(error.error || 'Failed to scan frequencies');
   }
+  return response.json();
+}
+
+// Active System API
+// Re-export ActiveSystemInfo from types
+export type { ActiveSystemInfo } from '../types';
+
+export interface ActiveSystemStatus {
+  active: boolean;
+  system: ActiveSystemInfo | null;
+}
+
+export async function getActiveSystem(): Promise<ActiveSystemStatus> {
+  const response = await fetch(`${API_BASE}/system/active`);
+  if (!response.ok) throw new Error('Failed to fetch active system');
+  return response.json();
+}
+
+export async function switchToSystem(systemId: number): Promise<{ success: boolean; system: ActiveSystemInfo }> {
+  const response = await fetch(`${API_BASE}/system/switch/${systemId}`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to switch system');
+  }
+  return response.json();
+}
+
+export async function stopSystem(): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/system/stop`, { method: 'POST' });
+  if (!response.ok) throw new Error('Failed to stop system');
+  return response.json();
+}
+
+export async function getSystemStatus(): Promise<{
+  running: boolean;
+  activeSystem: ActiveSystemInfo | null;
+}> {
+  const response = await fetch(`${API_BASE}/system/status`);
+  if (!response.ok) throw new Error('Failed to fetch system status');
   return response.json();
 }
