@@ -13,12 +13,13 @@ A real-time P25 trunked radio scanner web application that captures radio traffi
 7. [Libraries and Dependencies](#libraries-and-dependencies)
 8. [Limitations](#limitations)
 9. [Setup and Configuration](#setup-and-configuration)
-10. [Windows Installation (PowerShell)](#windows-installation-powershell)
-11. [Internal Data Flow (Mermaid Diagram)](#internal-data-flow-mermaid-diagram)
-12. [How Audio Recordings Work](#how-audio-recordings-work)
-13. [How Live Audio Streaming Works](#how-live-audio-streaming-works)
-14. [API Endpoints Reference](#api-endpoints-reference)
-15. [WebSocket Messages Reference](#websocket-messages-reference)
+10. [Quick Install Scripts](#quick-install-scripts) (Windows, macOS, Linux)
+11. [Connecting to trunk-recorder](#connecting-to-trunk-recorder)
+12. [Internal Data Flow (Mermaid Diagram)](#internal-data-flow-mermaid-diagram)
+13. [How Audio Recordings Work](#how-audio-recordings-work)
+14. [How Live Audio Streaming Works](#how-live-audio-streaming-works)
+15. [API Endpoints Reference](#api-endpoints-reference)
+16. [WebSocket Messages Reference](#websocket-messages-reference)
 
 ---
 
@@ -763,380 +764,156 @@ cd trunk-recorder
 
 ---
 
-## Windows Installation (PowerShell)
+## Quick Install Scripts
 
-Complete guide to set up the Radio Scanner from scratch on Windows using PowerShell.
+The easiest way to install is using the provided installation scripts that handle everything automatically.
 
-### Prerequisites Installation
+### Windows (PowerShell)
 
-#### 1. Install Node.js
-
-Download and install Node.js 18+ from [nodejs.org](https://nodejs.org/) (LTS version recommended).
-
-Verify installation in PowerShell:
 ```powershell
-node --version   # Should show v18.x.x or higher
-npm --version    # Should show 9.x.x or higher
+# 1. Download/clone the project and open PowerShell in the project folder
+
+# 2. Allow script execution (run once, as Administrator)
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# 3. Run the installer
+.\install-windows.ps1
 ```
 
-#### 2. Install Git (Optional but Recommended)
+The script will:
+- Check/install Node.js 18+ (via winget if available)
+- Check for Visual Studio Build Tools
+- Install npm dependencies
+- Build the project
+- Verify everything works
 
-Download from [git-scm.com](https://git-scm.com/download/win) or install via winget:
-```powershell
-winget install Git.Git
+### macOS
+
+```bash
+# 1. Download/clone the project and open Terminal in the project folder
+
+# 2. Make executable and run
+chmod +x install-mac.sh
+./install-mac.sh
 ```
 
-Verify:
-```powershell
-git --version
+The script will:
+- Check/install Homebrew
+- Check/install Node.js 18+
+- Install npm dependencies
+- Build the project
+- Verify everything works
+
+### Linux (Ubuntu/Debian, Fedora/RHEL, Arch)
+
+```bash
+# 1. Download/clone the project and open Terminal in the project folder
+
+# 2. Make executable and run
+chmod +x install-linux.sh
+./install-linux.sh
 ```
 
-#### 3. Install Build Tools for Native Modules
+The script will:
+- Detect your package manager (apt, dnf, yum, pacman)
+- Install system dependencies (build tools, curl, python3)
+- Check/install Node.js 18+ via NodeSource
+- Install npm dependencies
+- Build the project
+- Verify everything works
 
-Some npm packages require compilation. Install Windows Build Tools:
+### After Installation
 
-**Option A: Visual Studio Build Tools (Recommended)**
-```powershell
-# Download and install Visual Studio Build Tools from:
-# https://visualstudio.microsoft.com/visual-cpp-build-tools/
-# Select "Desktop development with C++" workload
-```
-
-**Option B: Via npm (simpler but slower)**
-```powershell
-# Run PowerShell as Administrator
-npm install -g windows-build-tools
-```
-
-### Project Setup
-
-#### 1. Clone or Download the Project
-
-```powershell
-# Clone with git
-git clone https://github.com/your-username/radio.git
-cd radio
-
-# Or download and extract ZIP, then navigate to folder
-cd C:\path\to\radio
-```
-
-#### 2. Install Dependencies
-
-```powershell
-npm install
-```
-
-This installs all dependencies for the root project, server, and client workspaces.
-
-If you encounter errors with `better-sqlite3`, ensure build tools are installed (see Prerequisites step 3).
-
-#### 3. Build the Project
-
-```powershell
-npm run build
-```
-
-This compiles:
-- Server TypeScript → `server/dist/`
-- Client React/Vite → `client/dist/`
-
-#### 4. Start the Server
-
-```powershell
+```bash
+# Start the server
 npm start
-```
 
-You should see:
-```
-Server running on http://localhost:3000
-WebSocket server ready on /ws
-Audio receiver listening on UDP port 9000
-```
+# Open in browser
+http://localhost:3000
 
-#### 5. Open the Web Interface
-
-Navigate to `http://localhost:3000` in your browser.
-
-### Development Mode (Hot Reloading)
-
-For development with auto-reload on code changes:
-
-```powershell
+# For development with hot reload
 npm run dev
 ```
 
-This starts:
-- Backend server with nodemon (auto-restart on changes)
-- Vite dev server at `http://localhost:5173` (hot module replacement)
+---
 
-### PowerShell Helper Scripts
+## Manual Installation
 
-Create these PowerShell scripts for convenience:
+If you prefer to install manually or the scripts don't work for your system:
 
-#### `start.ps1` - Start Production Server
-```powershell
-# start.ps1
-Write-Host "Starting Radio Scanner..." -ForegroundColor Cyan
+### Prerequisites
 
-# Kill any existing processes on required ports
-$ports = @(3000, 3001, 5173, 9000)
-foreach ($port in $ports) {
-    $process = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue |
-               Select-Object -ExpandProperty OwningProcess -ErrorAction SilentlyContinue
-    if ($process) {
-        Stop-Process -Id $process -Force -ErrorAction SilentlyContinue
-        Write-Host "Cleared port $port" -ForegroundColor Yellow
-    }
-}
+1. **Node.js 18+**: Download from [nodejs.org](https://nodejs.org/)
+2. **Build tools** (for native npm modules):
+   - **Windows**: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with "Desktop development with C++"
+   - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
+   - **Linux**: `build-essential` (Debian/Ubuntu), `base-devel` (Arch), `gcc-c++ make` (Fedora)
 
-# Ensure built
-if (-not (Test-Path "server/dist") -or -not (Test-Path "client/dist")) {
-    Write-Host "Building project..." -ForegroundColor Yellow
-    npm run build
-}
+### Steps
 
-# Start server
-npm start
-```
-
-#### `dev.ps1` - Start Development Mode
-```powershell
-# dev.ps1
-Write-Host "Starting Development Mode..." -ForegroundColor Cyan
-
-# Kill any existing processes on required ports
-$ports = @(3000, 3001, 5173, 9000)
-foreach ($port in $ports) {
-    $process = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue |
-               Select-Object -ExpandProperty OwningProcess -ErrorAction SilentlyContinue
-    if ($process) {
-        Stop-Process -Id $process -Force -ErrorAction SilentlyContinue
-        Write-Host "Cleared port $port" -ForegroundColor Yellow
-    }
-}
-
-Write-Host ""
-Write-Host "Server (API):   http://localhost:3000" -ForegroundColor Green
-Write-Host "Client (Vite):  http://localhost:5173" -ForegroundColor Green
-Write-Host ""
-
-npm run dev
-```
-
-#### `status.ps1` - Check System Status
-```powershell
-# status.ps1
-Write-Host ""
-Write-Host "Radio Scanner Status" -ForegroundColor Cyan
-Write-Host "===================" -ForegroundColor Cyan
-Write-Host ""
-
-$ports = @{
-    3000 = "HTTP Server + WebSocket"
-    3001 = "trunk-recorder Status WS"
-    5173 = "Vite Dev Server"
-    9000 = "Audio UDP Stream"
-}
-
-foreach ($port in $ports.Keys | Sort-Object) {
-    $desc = $ports[$port]
-    $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-    if ($conn) {
-        $pid = $conn.OwningProcess
-        $proc = (Get-Process -Id $pid -ErrorAction SilentlyContinue).ProcessName
-        Write-Host "  :$port  $desc  " -NoNewline
-        Write-Host "LISTENING" -ForegroundColor Green -NoNewline
-        Write-Host "  ($proc, PID $pid)"
-    } else {
-        Write-Host "  :$port  $desc  " -NoNewline
-        Write-Host "not in use" -ForegroundColor DarkGray
-    }
-}
-
-Write-Host ""
-
-# Check API health if server is running
-$serverRunning = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
-if ($serverRunning) {
-    try {
-        $health = Invoke-RestMethod -Uri "http://localhost:3000/api/health" -TimeoutSec 2
-        Write-Host "  API Status: " -NoNewline
-        Write-Host "OK" -ForegroundColor Green -NoNewline
-        Write-Host " ($($health.clients) WebSocket clients)"
-    } catch {
-        Write-Host "  API Status: " -NoNewline
-        Write-Host "ERROR" -ForegroundColor Red
-    }
-}
-
-Write-Host ""
-```
-
-#### `stop.ps1` - Stop All Services
-```powershell
-# stop.ps1
-Write-Host "Stopping Radio Scanner services..." -ForegroundColor Yellow
-
-$ports = @(3000, 3001, 5173, 9000)
-foreach ($port in $ports) {
-    $connections = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
-    foreach ($conn in $connections) {
-        $pid = $conn.OwningProcess
-        if ($pid -and $pid -ne 0) {
-            Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
-            Write-Host "Killed process $pid on port $port" -ForegroundColor Yellow
-        }
-    }
-}
-
-# Kill any node processes running this project
-Get-Process -Name "node" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -like "*radio*" } |
-    Stop-Process -Force -ErrorAction SilentlyContinue
-
-Write-Host "All services stopped" -ForegroundColor Green
-```
-
-#### `build.ps1` - Clean Build
-```powershell
-# build.ps1
-Write-Host "Building Radio Scanner..." -ForegroundColor Cyan
-
-# Clean old builds
-if (Test-Path "server/dist") { Remove-Item -Recurse -Force "server/dist" }
-if (Test-Path "client/dist") { Remove-Item -Recurse -Force "client/dist" }
-
-# Build
-npm run build
-
-if ($LASTEXITCODE -eq 0) {
-    Write-Host ""
-    Write-Host "Build successful!" -ForegroundColor Green
-} else {
-    Write-Host ""
-    Write-Host "Build failed!" -ForegroundColor Red
-    exit 1
-}
-```
-
-### Running the Scripts
-
-```powershell
-# Make sure you're in the project directory
-cd C:\path\to\radio
-
-# Run a script
-.\start.ps1
-.\dev.ps1
-.\status.ps1
-.\stop.ps1
-.\build.ps1
-```
-
-If you get an execution policy error:
-```powershell
-# Allow local scripts (run as Administrator)
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-### Connecting to trunk-recorder
-
-trunk-recorder typically runs on Linux. To connect from Windows:
-
-1. **Same machine (WSL2)**: trunk-recorder in WSL2 can send to localhost:
-   ```json
-   // trunk-recorder config.json
-   {
-     "statusServer": "ws://localhost:3001",
-     "audioStream": {
-       "port": 9000,
-       "host": "localhost"
-     }
-   }
-   ```
-
-2. **Remote machine**: Update IPs in trunk-recorder config:
-   ```json
-   {
-     "statusServer": "ws://YOUR_WINDOWS_IP:3001",
-     "audioStream": {
-       "port": 9000,
-       "host": "YOUR_WINDOWS_IP"
-     }
-   }
-   ```
-
-3. **Firewall**: Allow inbound connections on ports 3000, 3001, 9000:
-   ```powershell
-   # Run as Administrator
-   New-NetFirewallRule -DisplayName "Radio Scanner" -Direction Inbound -LocalPort 3000,3001,9000 -Protocol TCP -Action Allow
-   New-NetFirewallRule -DisplayName "Radio Scanner UDP" -Direction Inbound -LocalPort 9000 -Protocol UDP -Action Allow
-   ```
-
-### Troubleshooting Windows Issues
-
-#### `better-sqlite3` Build Errors
-
-```powershell
-# Rebuild native modules
-npm rebuild better-sqlite3
-
-# If that fails, try:
-npm install --build-from-source better-sqlite3
-```
-
-#### Port Already in Use
-
-```powershell
-# Find what's using port 3000
-Get-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess
-
-# Kill it
-Stop-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess -Force
-```
-
-#### Node.js Version Issues
-
-```powershell
-# Check version
-node --version
-
-# If < 18, install nvm-windows from:
-# https://github.com/coreybutler/nvm-windows
-nvm install 18
-nvm use 18
-```
-
-#### PowerShell Script Execution Disabled
-
-```powershell
-# Check current policy
-Get-ExecutionPolicy
-
-# Enable for current user
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-### Quick Start Summary (Windows)
-
-```powershell
-# 1. Install Node.js 18+ from nodejs.org
-
-# 2. Clone/download project
+```bash
+# 1. Clone the project
 git clone https://github.com/your-username/radio.git
 cd radio
 
-# 3. Install dependencies
+# 2. Install dependencies
 npm install
 
-# 4. Build
+# 3. Build
 npm run build
 
-# 5. Start
+# 4. Start
 npm start
 
-# 6. Open http://localhost:3000 in browser
+# 5. Open http://localhost:3000
+```
+
+---
+
+## Connecting to trunk-recorder
+
+trunk-recorder sends audio and status data to this server. Configure trunk-recorder's `config.json`:
+
+```json
+{
+  "statusServer": "ws://SERVER_IP:3001",
+  "simpleStream": {
+    "streams": [{
+      "address": "SERVER_IP",
+      "port": 9000,
+      "sendTGID": true,
+      "sendJSON": true,
+      "shortName": "your-system"
+    }]
+  }
+}
+```
+
+Replace `SERVER_IP` with:
+- `localhost` or `127.0.0.1` if running on the same machine
+- Your server's IP address if running remotely
+
+### Firewall Configuration
+
+**Windows (PowerShell as Administrator):**
+```powershell
+New-NetFirewallRule -DisplayName "Radio Scanner" -Direction Inbound -LocalPort 3000,3001,9000 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "Radio Scanner UDP" -Direction Inbound -LocalPort 9000 -Protocol UDP -Action Allow
+```
+
+**Linux (ufw):**
+```bash
+sudo ufw allow 3000/tcp
+sudo ufw allow 3001/tcp
+sudo ufw allow 9000/udp
+```
+
+**Linux (firewalld):**
+```bash
+sudo firewall-cmd --add-port=3000/tcp --permanent
+sudo firewall-cmd --add-port=3001/tcp --permanent
+sudo firewall-cmd --add-port=9000/udp --permanent
+sudo firewall-cmd --reload
 ```
 
 ---
