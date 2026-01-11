@@ -1,9 +1,9 @@
-import pg from 'pg';
-
-const { Client } = pg;
-
 // For serverless functions, use a single client per request instead of a pool
-async function getClient(): Promise<pg.Client> {
+// Use dynamic import to avoid bundling issues
+async function getClient(): Promise<any> {
+  const pg = await import('pg');
+  const { Client } = pg.default || pg;
+
   const connectionString = process.env.POSTGRES_URL || '';
   // Remove sslmode from connection string (we handle SSL in config)
   const cleanConnectionString = connectionString.replace(/[?&]sslmode=[^&]*/gi, '');
@@ -202,7 +202,7 @@ export async function getStats() {
       (SELECT COUNT(*) FROM rr_systems) as total_systems,
       (SELECT COUNT(*) FROM rr_talkgroups) as total_talkgroups,
       (SELECT COUNT(*) FROM rr_sites) as total_sites,
-      (SELECT COUNT(*) FROM rr_systems WHERE type ILIKE '%P25%') as p25_systems
+      (SELECT COUNT(*) FROM rr_systems WHERE type ILIKE '%P25%' OR type ILIKE '%Project 25%') as p25_systems
   `);
   return result.rows[0];
 }
