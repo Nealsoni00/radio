@@ -2,7 +2,7 @@ import { useWebSocket, usePersistentSize } from './hooks';
 import { Header, ResizeHandle } from './components/layout';
 import { CallList, CallDetails } from './components/calls';
 import { TalkgroupFilter } from './components/talkgroups';
-import { LiveAudioPlayer, FloatingAudioPlayer } from './components/audio';
+import { FloatingAudioPlayer } from './components/audio';
 import { SystemStatus } from './components/status';
 import { SystemBrowser } from './components/radioreference';
 import { ControlChannelFeed } from './components/control';
@@ -207,9 +207,6 @@ function App() {
       <FloatingAudioPlayer />
 
       <SystemStatus />
-
-      {/* Live audio player (invisible, handles audio in background) */}
-      <LiveAudioPlayer />
     </div>
   );
 }

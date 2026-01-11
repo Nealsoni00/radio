@@ -304,16 +304,23 @@ export function TalkgroupFilter() {
                 <span
                   className={`text-sm truncate flex-1 ${isLiveNow ? 'text-green-300 font-medium' : 'text-white'}`}
                   title={[
-                    `ID: ${tg.id} (hex: ${tg.alpha_tag || tg.id.toString(16)})`,
+                    `ID: ${tg.id} (hex: ${tg.id.toString(16).toUpperCase()})`,
                     tg.group_name && `Group: ${tg.group_name}`,
                     tg.description && `Description: ${tg.description}`,
                     tg.group_tag && `Tag: ${tg.group_tag}`,
                     `Mode: ${tg.mode || 'Unknown'}`,
                   ].filter(Boolean).join('\n')}
                 >
-                  {tg.group_name
+                  {/* Prioritize: group_name > group_tag > description > alpha_tag > hex ID */}
+                  {tg.group_name && tg.group_name.length > 2
                     ? `${tg.group_name}${tg.description ? ` - ${tg.description}` : ''}`
-                    : tg.alpha_tag || `TG ${tg.id}`}
+                    : tg.group_tag && tg.group_tag.length > 2
+                    ? tg.group_tag
+                    : tg.description && tg.description.length > 2
+                    ? tg.description
+                    : tg.alpha_tag && tg.alpha_tag.length > 2
+                    ? tg.alpha_tag
+                    : `TG ${tg.id.toString(16).toUpperCase()}`}
                 </span>
                 {/* Live waveform animation when actively streaming */}
                 {isLiveNow && (

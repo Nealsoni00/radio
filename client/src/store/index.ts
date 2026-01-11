@@ -8,3 +8,4 @@ export { useTalkgroupsStore } from './talkgroups';
 export { useAudioStore, type QueuedAudio } from './audio';
 export { useConnectionStore } from './connection';
 export { useControlChannelStore } from './controlChannel';
+export { useSystemStore } from './system';

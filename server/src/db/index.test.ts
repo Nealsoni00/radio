@@ -456,4 +456,168 @@ describe('Database Functions', () => {
       expect(tgs[1].group_name).toBe('Phoenix PD');
     });
   });
+
+  /**
+   * Audio File Linking Tests
+   *
+   * These tests ensure that audio files are always properly linked to calls.
+   * If these tests fail, recordings may exist on disk but not show up in the UI.
+   */
+  describe('Audio File Linking', () => {
+    beforeEach(() => {
+      upsertTalkgroup(927, 'Control A2', 'North/West Dispatch', 'SFPD', 'Law Dispatch', 'D');
+      upsertTalkgroup(812, 'EMS Dispatch', 'EMS Dispatch', 'SFFD', 'Fire Dispatch', 'D');
+    });
+
+    it('should store audio_file path when inserting a call', () => {
+      const audioPath = '/var/lib/trunk-recorder/audio/927-1704825600.wav';
+
+      insertCall({
+        id: '927-1704825600',
+        talkgroupId: 927,
+        frequency: 852387500,
+        startTime: 1704825600,
+        stopTime: 1704825610,
+        duration: 10,
+        audioFile: audioPath,
+        audioType: 'digital',
+      });
+
+      const call = getCall('927-1704825600');
+      expect(call).not.toBeNull();
+      expect(call.audio_file).toBe(audioPath);
+      expect(call.audio_type).toBe('digital');
+    });
+
+    it('should return audio_file in getCalls results', () => {
+      const audioPath = '/var/lib/trunk-recorder/audio/927-1704825600.wav';
+
+      insertCall({
+        id: '927-1704825600',
+        talkgroupId: 927,
+        frequency: 852387500,
+        startTime: 1704825600,
+        audioFile: audioPath,
+      });
+
+      const calls = getCalls({ talkgroupId: 927 });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].audio_file).toBe(audioPath);
+    });
+
+    it('should handle calls without audio files (audio_file = null)', () => {
+      insertCall({
+        id: '927-1704825700',
+        talkgroupId: 927,
+        frequency: 852387500,
+        startTime: 1704825700,
+        // No audioFile provided
+      });
+
+      const call = getCall('927-1704825700');
+      expect(call).not.toBeNull();
+      expect(call.audio_file).toBeNull();
+    });
+
+    it('should preserve audio_file when upserting a call with INSERT OR REPLACE', () => {
+      const audioPath = '/var/lib/trunk-recorder/audio/927-1704825600.wav';
+
+      // First insert with audio file
+      insertCall({
+        id: '927-1704825600',
+        talkgroupId: 927,
+        frequency: 852387500,
+        startTime: 1704825600,
+        duration: 5,
+        audioFile: audioPath,
+      });
+
+      // Second insert with same ID should replace and keep audio file if provided
+      insertCall({
+        id: '927-1704825600',
+        talkgroupId: 927,
+        frequency: 852387500,
+        startTime: 1704825600,
+        duration: 10,
+        audioFile: audioPath, // Must re-provide audio file
+      });
+
+      const call = getCall('927-1704825600');
+      expect(call.duration).toBe(10);
+      expect(call.audio_file).toBe(audioPath);
+    });
+
+    it('should correctly link multiple calls with different audio files', () => {
+      const calls = [
+        { id: '927-1704825600', talkgroupId: 927, audioPath: '/audio/927-1704825600.wav' },
+        { id: '927-1704825700', talkgroupId: 927, audioPath: '/audio/927-1704825700.wav' },
+        { id: '812-1704825650', talkgroupId: 812, audioPath: '/audio/812-1704825650.wav' },
+      ];
+
+      calls.forEach(c => {
+        insertCall({
+          id: c.id,
+          talkgroupId: c.talkgroupId,
+          frequency: 852387500,
+          startTime: parseInt(c.id.split('-')[1]),
+          audioFile: c.audioPath,
+        });
+      });
+
+      // Verify each call has the correct audio file
+      calls.forEach(c => {
+        const call = getCall(c.id);
+        expect(call.audio_file).toBe(c.audioPath);
+      });
+
+      // Verify getCalls returns all audio files
+      const allCalls = getCalls();
+      expect(allCalls).toHaveLength(3);
+      expect(allCalls.every(c => c.audio_file !== null)).toBe(true);
+    });
+
+    it('should handle audio files with special characters in path', () => {
+      const audioPath = '/var/lib/trunk-recorder/audio/2024-01-10/TG 927 - Dispatch (1704825600).wav';
+
+      insertCall({
+        id: '927-1704825600',
+        talkgroupId: 927,
+        frequency: 852387500,
+        startTime: 1704825600,
+        audioFile: audioPath,
+      });
+
+      const call = getCall('927-1704825600');
+      expect(call.audio_file).toBe(audioPath);
+    });
+
+    it('should distinguish between calls with and without audio in query results', () => {
+      // Call with audio
+      insertCall({
+        id: '927-1704825600',
+        talkgroupId: 927,
+        frequency: 852387500,
+        startTime: 1704825600,
+        audioFile: '/audio/927-1704825600.wav',
+      });
+
+      // Call without audio (e.g., out of band, encrypted, etc.)
+      insertCall({
+        id: '927-1704825700',
+        talkgroupId: 927,
+        frequency: 853650000, // Out of band frequency
+        startTime: 1704825700,
+        // No audio file
+      });
+
+      const calls = getCalls({ talkgroupId: 927 });
+      expect(calls).toHaveLength(2);
+
+      const callWithAudio = calls.find(c => c.id === '927-1704825600');
+      const callWithoutAudio = calls.find(c => c.id === '927-1704825700');
+
+      expect(callWithAudio?.audio_file).not.toBeNull();
+      expect(callWithoutAudio?.audio_file).toBeNull();
+    });
+  });
 });

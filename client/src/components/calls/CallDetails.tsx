@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react';
-import { useCallsStore } from '../../store';
+import { useCallsStore, useSystemStore } from '../../store';
 import { getCall, getAudioUrl } from '../../services/api';
 import { formatTimestamp, formatDuration, formatFrequency, formatDate } from '../../utils/formatters';
 import { WaveformPlayer } from '../audio/WaveformPlayer';
 import type { CallSource } from '../../types';
+import {
+  AUDIO_MISSING_REASONS,
+  AUDIO_MISSING_INFO,
+  getAudioMissingReasonCode,
+  formatSpectrumRangeError,
+  type AudioMissingReason,
+} from '../../constants/audioStatus';
 
 export function CallDetails() {
   const { selectedCall, selectCall } = useCallsStore();
+  const { activeSystem } = useSystemStore();
   const [sources, setSources] = useState<CallSource[]>([]);
   const [isLoadingSources, setIsLoadingSources] = useState(false);
 
@@ -113,6 +121,69 @@ export function CallDetails() {
             />
           </div>
         )}
+
+        {/* Audio unavailable explanation */}
+        {(() => {
+          const reasonCode = getAudioMissingReasonCode(selectedCall, activeSystem);
+          if (!reasonCode) return null;
+
+          const info = AUDIO_MISSING_INFO[reasonCode];
+
+          // Get description - use formatted spectrum error for out-of-spectrum
+          const description = reasonCode === AUDIO_MISSING_REASONS.OUT_OF_SPECTRUM && activeSystem
+            ? formatSpectrumRangeError(selectedCall.frequency, activeSystem)
+            : info.description;
+
+          const iconMap: Record<string, JSX.Element> = {
+            spectrum: (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            ),
+            encrypted: (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            ),
+            active: (
+              <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+              </svg>
+            ),
+            recorder: (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            ),
+            unknown: (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            ),
+          };
+
+          const colorMap: Record<string, string> = {
+            spectrum: 'bg-orange-900/30 border-orange-700/50 text-orange-300',
+            encrypted: 'bg-yellow-900/30 border-yellow-700/50 text-yellow-300',
+            active: 'bg-green-900/30 border-green-700/50 text-green-300',
+            recorder: 'bg-red-900/30 border-red-700/50 text-red-300',
+            unknown: 'bg-slate-800 border-slate-700 text-slate-400',
+          };
+
+          return (
+            <div className={`mb-4 rounded-lg border p-3 ${colorMap[info.icon]}`}>
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 mt-0.5">
+                  {iconMap[info.icon]}
+                </div>
+                <div>
+                  <div className="font-medium text-sm">{info.title}</div>
+                  <div className="text-xs opacity-80 mt-0.5">{description}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Sources */}
         {sources.length > 0 && (

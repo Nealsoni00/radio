@@ -144,8 +144,38 @@ class WebSocketManager {
 
       case 'callEnd':
         if (message.call) {
+          console.log('[WS] callEnd received:', {
+            id: message.call.id,
+            audioFile: (message.call as any).audioFile,
+            audio_file: message.call.audio_file,
+          });
           const call = transformCall(message.call);
-          updateCall(call.id, call);
+          console.log('[WS] callEnd transformed:', {
+            id: call.id,
+            audio_file: call.audio_file,
+          });
+
+          // Find the matching call - try exact ID first, then fall back to talkgroup
+          const callsState = useCallsStore.getState();
+          const existingByExactId = callsState.calls.find((c) => c.id === call.id);
+          const existingByTalkgroup = callsState.activeCalls.find(
+            (c) => c.talkgroup_id === call.talkgroup_id
+          );
+          const existingCall = existingByExactId || existingByTalkgroup;
+
+          console.log('[WS] callEnd matching:', {
+            exactIdMatch: existingByExactId?.id,
+            talkgroupMatch: existingByTalkgroup?.id,
+            usingId: existingCall?.id,
+          });
+
+          if (existingCall) {
+            // Update the existing call with the new data
+            updateCall(existingCall.id, { ...call, id: existingCall.id });
+          } else {
+            // No existing call found, add it as a new completed call
+            addCall({ ...call, isActive: false });
+          }
           setPlaying(false);
         }
         break;
@@ -263,8 +293,12 @@ class WebSocketManager {
         magnitudes,
       });
     } else {
-      // Handle audio data
-      const pcmData = new Int16Array(buffer, 4 + headerLen);
+      // Handle audio data - copy to aligned buffer since offset may not be 2-byte aligned
+      const audioDataStart = 4 + headerLen;
+      const audioDataBytes = new Uint8Array(buffer, audioDataStart);
+      const alignedBuffer = new ArrayBuffer(audioDataBytes.length);
+      new Uint8Array(alignedBuffer).set(audioDataBytes);
+      const pcmData = new Int16Array(alignedBuffer);
 
       // Dispatch audio event for the audio player to handle
       window.dispatchEvent(

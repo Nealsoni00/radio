@@ -30,7 +30,8 @@ export class AudioReceiver extends EventEmitter {
           // Log every 100 packets or every 5 seconds
           const now = Date.now();
           if (this.packetCount % 100 === 0 || now - this.lastLogTime > 5000) {
-            console.log(`[AudioReceiver] Received ${this.packetCount} packets, latest TG: ${packet.talkgroupId}, size: ${packet.pcmData.length} bytes`);
+            const meta = packet.metadata as Record<string, unknown> || {};
+            console.log(`[AudioReceiver] Packet #${this.packetCount} - TG:${packet.talkgroupId} size:${packet.pcmData.length}bytes rate:${meta.audio_sample_rate || 'unknown'} event:${meta.event || 'unknown'}`);
             this.lastLogTime = now;
           }
           this.emit('audio', packet);
@@ -78,7 +79,7 @@ export class AudioReceiver extends EventEmitter {
         const pcmData = data.slice(4 + firstUint32);
 
         if (this.packetCount < 5) {
-          console.log(`[AudioReceiver] Parsed JSON metadata:`, metadata);
+          console.log(`[AudioReceiver] Parsed JSON metadata (length prefix):`, metadata);
         }
 
         return {
@@ -90,7 +91,46 @@ export class AudioReceiver extends EventEmitter {
         if (this.packetCount < 5) {
           console.log(`[AudioReceiver] JSON parse failed:`, e);
         }
-        // Fall through to TGID-only parsing
+        // Fall through to next parsing method
+      }
+    }
+
+    // Check if JSON starts at byte 4 (after a 4-byte header, even if header isn't a valid length)
+    // This handles cases where the length prefix is malformed but JSON is still present
+    if (data.length > 4 && data[4] === 0x7B) { // '{' at position 4
+      try {
+        // Find the end of JSON by looking for closing brace
+        let jsonEnd = -1;
+        let braceCount = 0;
+        for (let i = 4; i < Math.min(data.length, 2000); i++) {
+          if (data[i] === 0x7B) braceCount++;
+          else if (data[i] === 0x7D) {
+            braceCount--;
+            if (braceCount === 0) {
+              jsonEnd = i + 1;
+              break;
+            }
+          }
+        }
+        if (jsonEnd > 4) {
+          const jsonStr = data.slice(4, jsonEnd).toString('utf8');
+          const metadata = JSON.parse(jsonStr);
+          const pcmData = data.slice(jsonEnd);
+
+          if (this.packetCount < 5) {
+            console.log(`[AudioReceiver] Parsed JSON at offset 4 (found ${jsonEnd - 4} bytes JSON, ${pcmData.length} bytes audio):`, metadata);
+          }
+
+          return {
+            talkgroupId: metadata.talkgroup || metadata.tgid,
+            pcmData,
+            metadata,
+          };
+        }
+      } catch (e) {
+        if (this.packetCount < 5) {
+          console.log(`[AudioReceiver] JSON at offset 4 parse failed:`, e);
+        }
       }
     }
 
@@ -100,7 +140,7 @@ export class AudioReceiver extends EventEmitter {
         // Find the end of JSON by looking for closing brace followed by binary data
         let jsonEnd = -1;
         let braceCount = 0;
-        for (let i = 0; i < Math.min(data.length, 1000); i++) {
+        for (let i = 0; i < Math.min(data.length, 2000); i++) {
           if (data[i] === 0x7B) braceCount++;
           else if (data[i] === 0x7D) {
             braceCount--;

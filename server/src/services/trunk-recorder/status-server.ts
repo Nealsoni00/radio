@@ -21,7 +21,12 @@ export class TrunkRecorderStatusServer extends EventEmitter {
 
       ws.on('message', (data: Buffer) => {
         try {
-          const message: TRStatusMessage = JSON.parse(data.toString());
+          const rawMessage = data.toString();
+          const message: TRStatusMessage = JSON.parse(rawMessage);
+          // Log call_end messages to debug audio file paths
+          if (message.type === 'call_end') {
+            console.log('[TR Status] Raw call_end message:', rawMessage.substring(0, 500));
+          }
           this.handleMessage(message);
         } catch (err) {
           console.error('Failed to parse trunk-recorder message:', err);

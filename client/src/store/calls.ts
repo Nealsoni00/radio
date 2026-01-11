@@ -60,10 +60,31 @@ export const useCallsStore = create<CallsState>((set) => ({
   },
 
   updateCall: (id, updates) => {
-    set((state) => ({
-      calls: state.calls.map((c) => (c.id === id ? { ...c, ...updates, isActive: false } : c)),
-      activeCalls: state.activeCalls.filter((c) => c.id !== id),
-    }));
+    console.log('[CallsStore] updateCall:', { id, audio_file: updates.audio_file });
+    set((state) => {
+      const existingCall = state.calls.find(c => c.id === id);
+      console.log('[CallsStore] Found existing call:', existingCall?.id, 'audio_file before:', existingCall?.audio_file);
+
+      const updatedCalls = state.calls.map((c) =>
+        c.id === id ? { ...c, ...updates, isActive: false } : c
+      );
+      const updatedCall = updatedCalls.find(c => c.id === id);
+      console.log('[CallsStore] Updated call audio_file:', updatedCall?.audio_file);
+
+      // Also update selectedCall if it matches the updated call
+      // This ensures the UI reflects changes immediately without needing to refresh
+      let newSelectedCall = state.selectedCall;
+      if (state.selectedCall?.id === id && updatedCall) {
+        newSelectedCall = updatedCall;
+        console.log('[CallsStore] Updated selectedCall with new audio_file:', newSelectedCall.audio_file);
+      }
+
+      return {
+        calls: updatedCalls,
+        activeCalls: state.activeCalls.filter((c) => c.id !== id),
+        selectedCall: newSelectedCall,
+      };
+    });
   },
 
   setActiveCalls: (calls) => {
