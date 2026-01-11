@@ -7,9 +7,13 @@ let pool: pg.Pool | null = null;
 
 function getPool(): pg.Pool {
   if (!pool) {
+    const connectionString = process.env.POSTGRES_URL || '';
+    // Remove sslmode from connection string and handle SSL in config
+    const cleanConnectionString = connectionString.replace(/[?&]sslmode=[^&]*/gi, '');
+
     pool = new Pool({
-      connectionString: process.env.POSTGRES_URL,
-      ssl: { rejectUnauthorized: false },
+      connectionString: cleanConnectionString,
+      ssl: false,  // Prisma Postgres accelerate proxy doesn't need SSL
       max: 10,
     });
   }
