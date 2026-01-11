@@ -46,11 +46,12 @@ A real-time P25 trunked radio scanner web application that captures radio traffi
 - County/state-based system discovery
 - Visual indicators for in-range and active frequencies
 
-### RadioReference Integration
-- Browse P25 systems by state and county
-- Import talkgroup lists automatically
-- Control channel frequency database
+### RadioReference Integration (Cloud Database)
+- Browse P25 systems by state and county from **Vercel Postgres**
+- Automatically select optimal control channel frequencies
+- Import talkgroup lists and generate trunk-recorder configs
 - System site and coverage information
+- Intelligent frequency clustering for RTL-SDR bandwidth limits
 
 ### Call History
 - SQLite database for all recorded calls
@@ -392,9 +393,17 @@ This project wraps trunk-recorder with a modern web interface, providing real-ti
    │  └─────────────────────────────────────────────────────┘     │
    │                      │                                        │
    │  ┌───────────────────┴───────────────────┐                   │
-   │  │            SQLite Database             │                   │
-   │  │  calls, talkgroups, radioreference     │                   │
+   │  │            Local SQLite Database       │                   │
+   │  │  calls, talkgroups, user selections    │                   │
    │  └───────────────────────────────────────┘                   │
+   │                      │                                        │
+   │                      │ RadioReference queries                 │
+   │                      ▼                                        │
+   │  ┌─────────────────────────────────────────────────────┐     │
+   │  │         Vercel Postgres (Cloud)                      │     │
+   │  │  P25 systems, frequencies, talkgroups, sites         │     │
+   │  │  (db.prisma.io - shared RadioReference database)     │     │
+   │  └─────────────────────────────────────────────────────┘     │
    └──────────────────────────────────────────────────────────────┘
                                 │
                                 │ WebSocket (JSON + Binary)
@@ -459,6 +468,80 @@ trunk-recorder writes:                Node.js Server
                                      Inserts into SQLite
                                      Broadcasts to clients
 ```
+
+#### 4. RadioReference Frequency Selection (Cloud → Server → trunk-recorder)
+
+RadioReference data (P25 systems, control channels, talkgroups) is stored in a **Vercel Postgres database** in the cloud. When a user selects a system to monitor, the server fetches frequency data from this cloud database and generates a trunk-recorder configuration.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     RADIOREFERENCE DATA FLOW                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+   ┌──────────────────┐
+   │   Web Browser    │
+   │   (User selects  │
+   │    a P25 system) │
+   └────────┬─────────┘
+            │ 1. Browse States → Counties → Systems
+            │    GET /api/rr/states
+            │    GET /api/rr/systems?county=123
+            ▼
+   ┌──────────────────┐         ┌─────────────────────────────┐
+   │  Node.js Server  │◄───────►│   Vercel Postgres (Cloud)   │
+   │  (localhost:3000)│         │   db.prisma.io:5432         │
+   └────────┬─────────┘         │                             │
+            │                   │   Tables:                   │
+            │ 2. Fetch system   │   • rr_states               │
+            │    frequencies    │   • rr_counties             │
+            │                   │   • rr_systems              │
+            │                   │   • rr_sites                │
+            │                   │   • rr_frequencies ◄────────┼── Control channels
+            │                   │   • rr_talkgroups           │    & voice freqs
+            │                   └─────────────────────────────┘
+            │
+            │ 3. Generate optimal config
+            │    • Find control channel clusters
+            │    • Calculate center frequency
+            │    • Score by voice channel coverage
+            ▼
+   ┌──────────────────┐
+   │  trunk-recorder  │
+   │   config.json    │◄─── Generated with:
+   └────────┬─────────┘      • center: 851500000 (calculated)
+            │                • control_channels: [851012500, ...]
+            │                • talkgroupsFile: system.csv
+            │
+            │ 4. trunk-recorder tunes RTL-SDR
+            ▼               to selected frequencies
+   ┌──────────────────┐
+   │     RTL-SDR      │
+   │  (Receives P25   │
+   │   radio traffic) │
+   └──────────────────┘
+```
+
+**Intelligent Frequency Selection:**
+
+The server doesn't just use raw frequencies—it intelligently selects the best cluster:
+
+1. **Fetches all frequencies** from Vercel Postgres for the selected system
+2. **Groups control channels** into clusters (within RTL-SDR's 2.4 MHz bandwidth)
+3. **Scores each cluster** based on:
+   - Number of control channels in cluster
+   - Voice channels within reception range (weighted 2x)
+4. **Selects the highest-scoring cluster** for optimal coverage
+5. **Handles split-band systems** (700 MHz vs 800 MHz) intelligently
+6. **Generates trunk-recorder config** with calculated center frequency
+
+**Database Split:**
+
+| Database | Location | Contents |
+|----------|----------|----------|
+| **Vercel Postgres** | Cloud (db.prisma.io) | RadioReference data: systems, frequencies, talkgroups, sites |
+| **Local SQLite** | server/data/radio.db | Call recordings, user selections, local talkgroup overrides |
+
+This architecture allows the RadioReference database to be shared across multiple deployments while keeping call history local.
 
 ### Server Components
 
@@ -1139,9 +1222,13 @@ flowchart TB
         end
 
         subgraph Processing["Processing"]
-            DB[(SQLite DB\ncalls, talkgroups)]
+            DB[(Local SQLite\ncalls, selections)]
             ChannelTrack["ChannelTracker\n(active frequencies)"]
             FFTRec["FFTRecorder\n(spectrum history)"]
+        end
+
+        subgraph CloudDB["Vercel Postgres (Cloud)"]
+            RRDB[(RadioReference DB\nsystems, frequencies,\ntalkgroups, sites)]
         end
 
         subgraph Broadcast["BroadcastServer (WebSocket /ws)"]
@@ -1172,6 +1259,7 @@ flowchart TB
             AudioStore["useAudioStore\n(queue, volume)"]
             FFTStore["useFFTStore\n(spectrum, waterfall)"]
             CCStore["useControlChannelStore\n(events)"]
+            RRStore["useRadioReferenceStore\n(systems, frequencies)"]
         end
 
         subgraph Components["UI Components"]
@@ -1180,6 +1268,7 @@ flowchart TB
             FloatingPlayer["FloatingAudioPlayer\n(live streaming)"]
             Spectrum["SpectrumDisplay\n+ WaterfallDisplay"]
             CCFeed["ControlChannelFeed"]
+            SystemBrowser["SystemBrowser\n(RadioReference selection)"]
         end
 
         subgraph WebAudio["Web Audio API"]
@@ -1198,6 +1287,7 @@ flowchart TB
         AudioStore --> FloatingPlayer
         FFTStore --> Spectrum
         CCStore --> CCFeed
+        RRStore --> SystemBrowser
 
         FloatingPlayer --> AudioCtx
         AudioCtx --> GainNode
@@ -1205,6 +1295,8 @@ flowchart TB
     end
 
     Server -->|"WebSocket /ws"| Client
+    RRDB -->|"Frequency data"| Server
+    Server -->|"Generate config"| TR
 ```
 
 ---
