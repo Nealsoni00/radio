@@ -13,6 +13,11 @@ A real-time P25 trunked radio scanner web application that captures radio traffi
 7. [Libraries and Dependencies](#libraries-and-dependencies)
 8. [Limitations](#limitations)
 9. [Setup and Configuration](#setup-and-configuration)
+10. [Internal Data Flow (Mermaid Diagram)](#internal-data-flow-mermaid-diagram)
+11. [How Audio Recordings Work](#how-audio-recordings-work)
+12. [How Live Audio Streaming Works](#how-live-audio-streaming-works)
+13. [API Endpoints Reference](#api-endpoints-reference)
+14. [WebSocket Messages Reference](#websocket-messages-reference)
 
 ---
 
@@ -762,6 +767,360 @@ cd trunk-recorder
 3. Look for "Project 25" or "P25" systems
 4. Note the control channel frequencies
 5. Download the talkgroup list
+
+---
+
+## Internal Data Flow (Mermaid Diagram)
+
+The following diagram shows how data flows through the system in detail:
+
+```mermaid
+flowchart TB
+    subgraph TR["trunk-recorder (External Process)"]
+        direction TB
+        RTLSDR["RTL-SDR\n(2.4 MSPS I/Q)"]
+        CC["Control Channel\nDecoder"]
+        DR["Digital Recorders\n(4x parallel)"]
+        IMBE["IMBE Decoder"]
+
+        RTLSDR --> CC
+        RTLSDR --> DR
+        DR --> IMBE
+    end
+
+    subgraph Outputs["trunk-recorder Outputs"]
+        direction LR
+        WS3001["WebSocket :3001\n(callStart/callEnd)"]
+        UDP9000["UDP :9000\n(Live PCM Audio)"]
+        UDP9001["UDP :9001\n(FFT Spectrum)"]
+        FILES["File System\n(.wav + .json)"]
+        LOGS["Log File\n(/tmp/trunk-recorder.log)"]
+    end
+
+    TR --> WS3001
+    TR --> UDP9000
+    TR --> UDP9001
+    TR --> FILES
+    TR --> LOGS
+
+    subgraph Server["Node.js Server (:3000)"]
+        direction TB
+
+        subgraph Services["Input Services"]
+            StatusSrv["TrunkRecorderStatusServer\n(WS :3001 listener)"]
+            AudioRcv["AudioReceiver\n(UDP :9000)"]
+            FFTRcv["FFTReceiver\n(UDP :9001)"]
+            FileWatch["FileWatcher\n(chokidar)"]
+            LogWatch["LogWatcher\n(tail -F)"]
+        end
+
+        subgraph Processing["Processing"]
+            DB[(SQLite DB\ncalls, talkgroups)]
+            ChannelTrack["ChannelTracker\n(active frequencies)"]
+            FFTRec["FFTRecorder\n(spectrum history)"]
+        end
+
+        subgraph Broadcast["BroadcastServer (WebSocket /ws)"]
+            WSOut["Binary: audio, fft\nJSON: callStart, callEnd,\nnewRecording, controlChannel"]
+        end
+
+        StatusSrv --> DB
+        StatusSrv --> WSOut
+        FileWatch --> DB
+        FileWatch --> WSOut
+        AudioRcv --> WSOut
+        FFTRcv --> FFTRec
+        FFTRcv --> WSOut
+        LogWatch --> WSOut
+    end
+
+    WS3001 --> StatusSrv
+    UDP9000 --> AudioRcv
+    UDP9001 --> FFTRcv
+    FILES --> FileWatch
+    LOGS --> LogWatch
+
+    subgraph Client["React Browser Client"]
+        direction TB
+
+        subgraph Stores["Zustand Stores"]
+            CallsStore["useCallsStore\n(calls, activeCalls)"]
+            AudioStore["useAudioStore\n(queue, volume)"]
+            FFTStore["useFFTStore\n(spectrum, waterfall)"]
+            CCStore["useControlChannelStore\n(events)"]
+        end
+
+        subgraph Components["UI Components"]
+            CallList["CallList\n+ CallDetails"]
+            WaveformPlayer["WaveformPlayer\n(recorded audio)"]
+            FloatingPlayer["FloatingAudioPlayer\n(live streaming)"]
+            Spectrum["SpectrumDisplay\n+ WaterfallDisplay"]
+            CCFeed["ControlChannelFeed"]
+        end
+
+        subgraph WebAudio["Web Audio API"]
+            AudioCtx["AudioContext"]
+            GainNode["GainNode\n(volume)"]
+            Analyser["AnalyserNode\n(visualization)"]
+        end
+
+        WSOut --> CallsStore
+        WSOut --> AudioStore
+        WSOut --> FFTStore
+        WSOut --> CCStore
+
+        CallsStore --> CallList
+        CallList --> WaveformPlayer
+        AudioStore --> FloatingPlayer
+        FFTStore --> Spectrum
+        CCStore --> CCFeed
+
+        FloatingPlayer --> AudioCtx
+        AudioCtx --> GainNode
+        GainNode --> Analyser
+    end
+
+    Server -->|"WebSocket /ws"| Client
+```
+
+---
+
+## How Audio Recordings Work
+
+When trunk-recorder completes a call, the recording flows through the system as follows:
+
+### Recording Creation Flow
+
+```mermaid
+sequenceDiagram
+    participant TR as trunk-recorder
+    participant FS as File System
+    participant FW as FileWatcher
+    participant DB as SQLite
+    participant WS as WebSocket
+    participant Client as Browser
+
+    TR->>FS: Write {tg}-{time}.wav
+    TR->>FS: Write {tg}-{time}.json (metadata)
+
+    Note over FW: chokidar detects new .json file
+    FW->>FS: Read JSON metadata
+    FW->>DB: INSERT into calls table
+    FW->>WS: broadcastNewRecording({audioUrl})
+
+    WS->>Client: {type: "newRecording", call: {..., audioUrl}}
+
+    Note over Client: transformCall() converts audioUrl → audio_file
+    Client->>Client: useCallsStore.updateCall() or addCall()
+    Client->>Client: UI re-renders with recording available
+
+    Note over Client: User clicks to play
+    Client->>WS: GET /api/audio/{callId}
+    WS->>FS: Stream WAV file
+    FS->>Client: Audio data
+    Client->>Client: WaveformPlayer renders + plays
+```
+
+### Key Points
+
+1. **File Detection**: The `FileWatcher` uses chokidar to watch for new `.json` files in the audio directory
+2. **Metadata Parsing**: JSON contains talkgroup, frequency, start/stop times, duration, and source units
+3. **Database Storage**: Call record is inserted with `audio_file` pointing to the WAV path
+4. **WebSocket Broadcast**: `newRecording` message sent with `audioUrl` (e.g., `/api/audio/812-1736554765`)
+5. **Client Update**: The `transformCall()` function normalizes field names (`audioUrl` → `audio_file`)
+6. **UI Rendering**: `CallDetails` component shows `WaveformPlayer` when `audio_file` is present
+
+### Audio File Naming
+
+trunk-recorder creates files with this pattern:
+```
+{talkgroup}-{startTime}_{frequency}-call_{N}.wav
+{talkgroup}-{startTime}_{frequency}-call_{N}.json
+
+Example: 812-1736554765_852387500.0-call_42.wav
+```
+
+The call ID used internally is: `{talkgroup}-{startTime}` (e.g., `812-1736554765`)
+
+---
+
+## How Live Audio Streaming Works
+
+Live audio streaming allows you to hear radio traffic in real-time as it's being received.
+
+### Live Audio Flow
+
+```mermaid
+sequenceDiagram
+    participant TR as trunk-recorder
+    participant UDP as UDP :9000
+    participant AR as AudioReceiver
+    participant WS as BroadcastServer
+    participant Client as Browser
+    participant WA as Web Audio API
+
+    Note over TR: Voice transmission begins
+
+    loop Every ~20ms during transmission
+        TR->>UDP: [4-byte header][JSON metadata][PCM samples]
+        UDP->>AR: Parse packet
+        AR->>AR: Enrich with talkgroup info from DB
+        AR->>WS: broadcastAudio(packet)
+
+        Note over WS: Filter by subscription + streamAudio flag
+        WS->>Client: Binary: [header len][JSON][PCM Int16]
+
+        Client->>Client: Parse binary message
+        Client->>Client: Dispatch 'audioChunk' event
+        Client->>WA: FloatingAudioPlayer.feed(pcmData)
+
+        Note over WA: Resample 8kHz → 48kHz
+        WA->>WA: Create AudioBuffer
+        WA->>WA: Schedule playback
+    end
+
+    Note over Client: Audio plays ~100-200ms behind real-time
+```
+
+### Enabling Live Audio
+
+1. **Client requests streaming**: Sends `{type: "enableAudio", enabled: true}` via WebSocket
+2. **Server tracks subscribers**: `BroadcastServer` sets `client.streamAudio = true`
+3. **Audio packets filtered**: Only clients with `streamAudio=true` receive audio
+4. **Talkgroup filtering**: Empty subscription = all talkgroups; specific set = only those
+
+### Audio Processing Pipeline
+
+```
+trunk-recorder PCM (8000 Hz, 16-bit signed)
+    │
+    ▼
+AudioReceiver parses UDP packet
+    │
+    ├── Metadata: talkgroupId, alphaTag, event type
+    └── PCM data: Int16Array
+    │
+    ▼
+BroadcastServer sends binary WebSocket message
+    │
+    ▼
+Client WebSocket handler
+    │
+    ├── Parses header (JSON metadata)
+    └── Extracts PCM (Int16Array)
+    │
+    ▼
+FloatingAudioPlayer / LivePCMPlayer
+    │
+    ├── Convert Int16 → Float32 (normalize to -1.0 to 1.0)
+    ├── Resample 8000 Hz → AudioContext.sampleRate (44100/48000)
+    ├── Create AudioBuffer
+    └── Schedule with AudioBufferSourceNode
+    │
+    ▼
+GainNode (volume control)
+    │
+    ▼
+AnalyserNode (visualization)
+    │
+    ▼
+Speakers
+```
+
+### FloatingAudioPlayer Features
+
+- **Up to 6 simultaneous streams** displayed as panels
+- **Per-stream volume control**
+- **Real-time spectrum visualization** using AnalyserNode
+- **Talkgroup filtering** via `useAudioStore.streamingTalkgroups`
+- **Auto-queue recordings** for playback when `isLiveEnabled`
+
+---
+
+## API Endpoints Reference
+
+### Calls
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/calls` | GET | List calls with pagination (`?limit=50&offset=0`) |
+| `/api/calls/:id` | GET | Get single call by ID |
+| `/api/calls/sources/:callId` | GET | Get radio units that participated in call |
+
+### Audio
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/audio/:id` | GET | Stream WAV audio file for a call |
+
+### Talkgroups
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/talkgroups` | GET | List all talkgroups with recent activity |
+| `/api/talkgroups/:id` | GET | Get talkgroup details |
+
+### System
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/system` | GET | Get active P25 system info |
+| `/api/system/:systemId` | POST | Switch to a different P25 system |
+
+### Spectrum
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/spectrum/channels` | GET | Get channel markers (control + voice) |
+| `/api/spectrum/record` | POST | Start recording FFT history |
+| `/api/spectrum/stop` | POST | Stop recording |
+| `/api/spectrum/replay/:timestamp` | GET | Replay recorded FFT from timestamp |
+
+### RadioReference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/radioreference/states` | GET | List US states |
+| `/api/radioreference/counties/:stateId` | GET | List counties in state |
+| `/api/radioreference/systems` | GET | Search P25 systems |
+| `/api/radioreference/talkgroups/:systemId` | GET | Get talkgroups for system |
+
+### Health & Config
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Server health + trunk-recorder status |
+| `/api/sdr` | GET | SDR center frequency + bandwidth |
+| `/api/sdr/devices` | GET | Detect connected RTL-SDR hardware |
+
+---
+
+## WebSocket Messages Reference
+
+### Server → Client
+
+| Type | Format | Description |
+|------|--------|-------------|
+| `connected` | JSON | Initial connection with client ID |
+| `callStart` | JSON | New transmission beginning |
+| `callEnd` | JSON | Transmission complete (includes `audioFile`) |
+| `newRecording` | JSON | Recording ready (includes `audioUrl`) |
+| `callsActive` | JSON | Periodic list of ongoing calls |
+| `rates` | JSON | Decode rate statistics |
+| `controlChannel` | JSON | Control channel event from logs |
+| `systemChanged` | JSON | Active P25 system changed |
+| `audio` | Binary | Live PCM audio samples |
+| `fft` | Binary | FFT spectrum data |
+
+### Client → Server
+
+| Type | Payload | Description |
+|------|---------|-------------|
+| `subscribeAll` | `{}` | Subscribe to all talkgroups |
+| `subscribe` | `{talkgroups: number[]}` | Subscribe to specific talkgroups |
+| `unsubscribe` | `{talkgroups: number[]}` | Unsubscribe from talkgroups |
+| `enableAudio` | `{enabled: boolean}` | Toggle live audio streaming |
+| `enableFFT` | `{enabled: boolean}` | Toggle FFT spectrum streaming |
 
 ---
 
