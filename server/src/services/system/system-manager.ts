@@ -7,7 +7,7 @@ import {
   getSystem,
   getFrequencies,
   getTalkgroups,
-} from '../../db/radioreference.js';
+} from '../../db/radioreference-postgres.js';
 import { setSystemType, setSystemShortName } from '../../db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -90,17 +90,16 @@ class SystemManager extends EventEmitter {
     setSystemShortName(system.name.substring(0, 50));
 
     // Get frequencies for the system
-    const frequencies = getFrequencies(systemId);
+    const frequencies = await getFrequencies(systemId);
     if (!frequencies || frequencies.length === 0) {
       throw new Error(`No frequencies found for system ${systemId}`);
     }
 
     // Get all control channels (deduplicated - simulcast systems have same freq on multiple sites)
-    const allControlChannels = [...new Set(
-      frequencies
-        .filter((f: { channelType?: string }) => f.channelType === 'control')
-        .map((f: { frequency: number }) => f.frequency)
-    )].sort((a: number, b: number) => a - b);
+    const controlFreqs = frequencies
+      .filter((f: { channelType?: string }) => f.channelType === 'control')
+      .map((f: { frequency: number }) => f.frequency);
+    const allControlChannels = Array.from(new Set<number>(controlFreqs)).sort((a, b) => a - b);
 
     if (allControlChannels.length === 0) {
       throw new Error(`No control channels found for system ${systemId}`);
@@ -134,11 +133,10 @@ class SystemManager extends EventEmitter {
     }
 
     // Get voice channels for scoring clusters (need both control + voice in range)
-    const voiceChannels = [...new Set(
-      frequencies
-        .filter((f: { channelType?: string }) => f.channelType === 'voice')
-        .map((f: { frequency: number }) => f.frequency)
-    )].sort((a: number, b: number) => a - b);
+    const voiceFreqs = frequencies
+      .filter((f: { channelType?: string }) => f.channelType === 'voice')
+      .map((f: { frequency: number }) => f.frequency);
+    const voiceChannels = Array.from(new Set<number>(voiceFreqs)).sort((a, b) => a - b);
 
     // Score clusters based on: control channels + voice channels in range
     const scoredClusters = clusters.map(cluster => {
@@ -202,7 +200,7 @@ class SystemManager extends EventEmitter {
       .replace(/^-|-$/g, '');
 
     // Get talkgroups for the system
-    const { talkgroups } = getTalkgroups({ systemId, limit: 5000 });
+    const { talkgroups } = await getTalkgroups({ systemId, limit: 5000 });
 
     // Generate talkgroups CSV file
     const talkgroupsCsvPath = join(this.talkgroupsDir, `${shortName}-talkgroups.csv`);

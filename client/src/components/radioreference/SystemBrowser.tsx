@@ -77,12 +77,23 @@ export function SystemBrowser() {
     // Update selections from URL
     if (urlSystemId && urlSystemId !== selectedSystemId) {
       selectSystem(urlSystemId);
-    } else if (urlStateId && urlStateId !== selectedStateId) {
-      selectState(urlStateId);
-      if (urlCountyId && urlCountyId !== selectedCountyId) {
+    } else if (urlStateId) {
+      // Update state selection if changed
+      if (urlStateId !== selectedStateId) {
+        selectState(urlStateId).then(() => {
+          // After state is selected and counties loaded, select county if present
+          if (urlCountyId) {
+            selectCounty(urlCountyId);
+          }
+        });
+      } else if (urlCountyId && urlCountyId !== selectedCountyId) {
+        // State is already selected, just update county
         selectCounty(urlCountyId);
       }
     }
+    // Note: We intentionally only depend on URL params to avoid infinite loops
+    // The store values (selectedStateId, etc.) are compared inside the effect
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateId, countyId, systemId, searchParams]);
 
   // Update URL when store changes
