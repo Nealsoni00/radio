@@ -2,7 +2,7 @@
   "ver": 2,
   "sources": [
     {
-      "center": 770500000,
+      "center": 851993750,
       "rate": 2400000,
       "error": 0,
       "gain": 40,
@@ -15,14 +15,19 @@
   ],
   "systems": [
     {
-      "shortName": "rwc",
+      "shortName": "san-francisco-co",
       "type": "p25",
-      "talkgroupsFile": "rwc-talkgroups.csv",
-      "unitTagsFile": "rwc-units.csv",
+      "talkgroupsFile": "san-francisco-co-talkgroups.csv",
       "modulation": "qpsk",
       "control_channels": [
-        770106250,
-        770356250
+        851150000,
+        851250000,
+        851400000,
+        851425000,
+        851612500,
+        852062500,
+        852262500,
+        852837500
       ],
       "callLog": true,
       "audioArchive": true,
@@ -37,7 +42,7 @@
   "callTimeout": 3,
   "logLevel": "info",
   "statusServer": "ws://127.0.0.1:3001",
-  "audioStreaming": false,
+  "audioStreaming": true,
   "plugins": [
     {
       "library": "/Users/nealsoni/Desktop/personal-projects/radio/tr-build/build/libfftstream.so",
@@ -46,6 +51,21 @@
       "address": "127.0.0.1",
       "port": 9001,
       "updateRate": 30
+    },
+    {
+      "library": "/Users/nealsoni/Desktop/personal-projects/radio/tr-build/build/libsimplestream.so",
+      "name": "Simple Stream",
+      "enabled": true,
+      "streams": [
+        {
+          "TGID": 0,
+          "address": "127.0.0.1",
+          "port": 9000,
+          "sendJSON": true,
+          "sendCallStart": true,
+          "sendCallEnd": true
+        }
+      ]
     }
   ]
 }

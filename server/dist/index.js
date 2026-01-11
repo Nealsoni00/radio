@@ -2,10 +2,10 @@ import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
-import { join, dirname } from 'path';
+import { join, dirname, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import { config } from './config/index.js';
-import { initializeDatabase, upsertTalkgroup, insertCall, insertCallSources } from './db/index.js';
+import { initializeDatabase, upsertTalkgroup, insertCall, insertCallSources, getTalkgroup } from './db/index.js';
 import { TrunkRecorderStatusServer } from './services/trunk-recorder/status-server.js';
 import { AudioReceiver } from './services/trunk-recorder/audio-receiver.js';
 import { FFTReceiver } from './services/trunk-recorder/fft-receiver.js';
@@ -27,15 +27,47 @@ import { detectRTLDevices } from './services/sdr/rtl-detect.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 /**
+ * Normalize an audio file path from trunk-recorder.
+ * trunk-recorder may send absolute paths, relative paths, or just filenames.
+ * This function ensures we always have a full absolute path.
+ */
+function normalizeAudioPath(filename) {
+    if (!filename)
+        return null;
+    // If it's already an absolute path, use it as-is
+    if (isAbsolute(filename)) {
+        return filename;
+    }
+    // Otherwise, join with the audio directory from config
+    return join(config.trunkRecorder.audioDir, filename);
+}
+/**
+ * Generate the expected audio file path for a call based on its metadata.
+ * This is used as a fallback when trunk-recorder doesn't provide the filename.
+ *
+ * trunk-recorder naming convention: {talkgroup}-{start_time}_{frequency}-call_{N}.wav
+ * But the simpler format is: {talkgroup}-{start_time}.wav
+ */
+function generateAudioPath(call) {
+    const callId = `${call.talkgroup}-${call.startTime}`;
+    return join(config.trunkRecorder.audioDir, `${callId}.wav`);
+}
+/**
  * Process a completed call: save to database and optionally broadcast.
  * Consolidates duplicate logic from callEnd and fileWatcher handlers.
+ *
+ * @param call - The call data from trunk-recorder
+ * @param audioPath - The normalized audio file path
+ * @param callId - Optional override for the call ID (defaults to talkgroup-startTime format)
  */
-function processCompletedCall(call, audioPath) {
+function processCompletedCall(call, audioPath, callId) {
+    // Use consistent call ID format: talkgroup-startTime
+    const id = callId || `${call.talkgroup}-${call.startTime}`;
     // Upsert talkgroup info
     upsertTalkgroup(call.talkgroup, call.talkgrouptag, call.talkgroupDescription, call.talkgroupGroup, call.talkgroupTag);
-    // Insert call record
+    // Insert call record with consistent ID
     insertCall({
-        id: call.id,
+        id,
         talkgroupId: call.talkgroup,
         frequency: call.freq,
         startTime: call.startTime,
@@ -48,7 +80,7 @@ function processCompletedCall(call, audioPath) {
     });
     // Insert call sources
     if (call.srcList && call.srcList.length > 0) {
-        insertCallSources(call.id, call.srcList);
+        insertCallSources(id, call.srcList);
     }
 }
 async function main() {
@@ -145,33 +177,50 @@ async function main() {
         }
     });
     trStatusServer.on('callStart', (call) => {
-        console.log(`Call started: TG ${call.talkgroup} (${call.talkgrouptag})`);
+        // Generate consistent call ID based on talkgroup and current timestamp
+        // This will be close to the start_time that callEnd will have
+        const startTime = Math.floor(Date.now() / 1000);
+        const consistentCallId = `${call.talkgroup}-${startTime}`;
+        console.log(`Call started: TG ${call.talkgroup} (${call.talkgrouptag}) ID: ${consistentCallId}`);
         // Track active call for spectrum markers
         channelTracker.addActiveCall({
-            id: call.id,
+            id: consistentCallId,
             frequency: call.freq,
             talkgroupId: call.talkgroup,
             alphaTag: call.talkgrouptag,
         });
         broadcastServer.broadcastCallStart({
-            id: call.id,
+            id: consistentCallId,
             talkgroupId: call.talkgroup,
             alphaTag: call.talkgrouptag,
             frequency: call.freq,
-            startTime: Math.floor(Date.now() / 1000),
+            startTime: startTime,
             emergency: false,
             encrypted: false,
         });
     });
     trStatusServer.on('callEnd', (call) => {
         console.log(`Call ended: TG ${call.talkgroup} (${call.talkgrouptag}) - ${call.length}s`);
+        // Normalize the audio file path, or generate it if not provided
+        let audioPath = normalizeAudioPath(call.filename);
+        if (!audioPath) {
+            audioPath = generateAudioPath(call);
+            console.log(`  → No filename provided, generated: "${audioPath}"`);
+        }
+        console.log(`  → Raw filename: "${call.filename}"`);
+        console.log(`  → Final audioPath: "${audioPath}"`);
+        console.log(`  → call ID: "${call.id}"`);
+        // Generate a consistent call ID based on talkgroup and start_time
+        // This ensures callStart and callEnd can be matched even if trunk-recorder
+        // sends different IDs
+        const consistentCallId = `${call.talkgroup}-${call.startTime}`;
         // Remove from active calls for spectrum markers
         channelTracker.removeCall(call.id);
-        // Save to database
-        processCompletedCall(call, call.filename);
-        // Broadcast to clients
-        broadcastServer.broadcastCallEnd({
-            id: call.id,
+        // Save to database with normalized path and consistent ID
+        processCompletedCall(call, audioPath, consistentCallId);
+        // Broadcast to clients using consistent call ID
+        const broadcastPayload = {
+            id: consistentCallId,
             talkgroupId: call.talkgroup,
             alphaTag: call.talkgrouptag,
             groupName: call.talkgroupGroup,
@@ -182,8 +231,10 @@ async function main() {
             duration: call.length,
             emergency: call.emergency,
             encrypted: call.encrypted,
-            audioFile: call.filename,
-        });
+            audioFile: audioPath,
+        };
+        console.log(`  → Broadcasting callEnd with ID: "${consistentCallId}", audioFile: "${audioPath}"`);
+        broadcastServer.broadcastCallEnd(broadcastPayload);
     });
     trStatusServer.on('callsActive', (calls) => {
         // Update channel tracker with full list of active calls
@@ -203,8 +254,36 @@ async function main() {
     trStatusServer.on('rates', (rates) => {
         broadcastServer.broadcastRates(rates);
     });
+    // Cache for talkgroup lookups (refreshes every 60 seconds)
+    const talkgroupCache = new Map();
+    const TALKGROUP_CACHE_TTL = 60000; // 60 seconds
     audioReceiver.on('audio', (packet) => {
-        broadcastServer.broadcastAudio(packet);
+        // Enrich packet with talkgroup info from database
+        const now = Date.now();
+        let cached = talkgroupCache.get(packet.talkgroupId);
+        if (!cached || now - cached.cachedAt > TALKGROUP_CACHE_TTL) {
+            const tg = getTalkgroup(packet.talkgroupId);
+            cached = {
+                alphaTag: tg?.alpha_tag,
+                groupName: tg?.group_name ?? undefined,
+                groupTag: tg?.group_tag ?? undefined,
+                description: tg?.description ?? undefined,
+                cachedAt: now,
+            };
+            talkgroupCache.set(packet.talkgroupId, cached);
+        }
+        // Add talkgroup info to metadata
+        const enrichedPacket = {
+            ...packet,
+            metadata: {
+                ...packet.metadata,
+                alphaTag: cached.alphaTag,
+                groupName: cached.groupName,
+                groupTag: cached.groupTag,
+                talkgroupDescription: cached.description,
+            },
+        };
+        broadcastServer.broadcastAudio(enrichedPacket);
     });
     fftReceiver.on('fft', (packet) => {
         // Broadcast live FFT to clients
