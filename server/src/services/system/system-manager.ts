@@ -213,7 +213,7 @@ class SystemManager extends EventEmitter {
       callTimeout: 3,
       logLevel: 'info',
       statusServer: 'ws://127.0.0.1:3001',
-      audioStreaming: false,
+      audioStreaming: true,
       plugins: [
         {
           library: join(this.projectRoot, 'tr-build/build/libfftstream.so'),
