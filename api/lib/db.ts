@@ -1,31 +1,27 @@
 import pg from 'pg';
 
-const { Pool } = pg;
+const { Client } = pg;
 
-// Create a connection pool
-let pool: pg.Pool | null = null;
+// For serverless functions, use a single client per request instead of a pool
+async function getClient(): Promise<pg.Client> {
+  const connectionString = process.env.POSTGRES_URL || '';
+  // Remove sslmode from connection string for compatibility
+  const cleanConnectionString = connectionString.replace(/[?&]sslmode=[^&]*/gi, '');
 
-function getPool(): pg.Pool {
-  if (!pool) {
-    const connectionString = process.env.POSTGRES_URL || '';
-    // Remove sslmode from connection string and handle SSL in config
-    const cleanConnectionString = connectionString.replace(/[?&]sslmode=[^&]*/gi, '');
-
-    pool = new Pool({
-      connectionString: cleanConnectionString,
-      ssl: false,  // Prisma Postgres accelerate proxy doesn't need SSL
-      max: 10,
-    });
-  }
-  return pool;
+  const client = new Client({
+    connectionString: cleanConnectionString,
+    ssl: false,
+  });
+  await client.connect();
+  return client;
 }
 
 async function query(text: string, params?: any[]) {
-  const client = await getPool().connect();
+  const client = await getClient();
   try {
     return await client.query(text, params);
   } finally {
-    client.release();
+    await client.end();
   }
 }
 
