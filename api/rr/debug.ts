@@ -8,10 +8,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const connectionString = process.env.POSTGRES_URL || 'NOT_SET';
     const cleanConnectionString = connectionString.replace(/[?&]sslmode=[^&]*/gi, '');
 
-    // Just try to connect
+    // Just try to connect with SSL
     const client = new Client({
       connectionString: cleanConnectionString,
-      ssl: false,
+      ssl: {
+        rejectUnauthorized: false,
+      },
     });
 
     await client.connect();

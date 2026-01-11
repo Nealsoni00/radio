@@ -5,12 +5,14 @@ const { Client } = pg;
 // For serverless functions, use a single client per request instead of a pool
 async function getClient(): Promise<pg.Client> {
   const connectionString = process.env.POSTGRES_URL || '';
-  // Remove sslmode from connection string for compatibility
+  // Remove sslmode from connection string (we handle SSL in config)
   const cleanConnectionString = connectionString.replace(/[?&]sslmode=[^&]*/gi, '');
 
   const client = new Client({
     connectionString: cleanConnectionString,
-    ssl: false,
+    ssl: {
+      rejectUnauthorized: false,
+    },
   });
   await client.connect();
   return client;
