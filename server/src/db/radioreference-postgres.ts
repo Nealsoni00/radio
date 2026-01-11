@@ -282,23 +282,39 @@ export function getSystemStats(): Promise<{
   }));
 }
 
-export function getSystemCountsByGeography(): Promise<{
+export function getSystemCountsByGeography(options?: { type?: string }): Promise<{
   byState: Record<number, number>;
   byCounty: Record<number, number>;
 }> {
+  const { type } = options || {};
+
+  // Build type filter clause
+  let typeClause = '';
+  const params: any[] = [];
+
+  if (type) {
+    if (type.toUpperCase() === 'P25') {
+      typeClause = ' AND (type ILIKE $1 OR type ILIKE $2)';
+      params.push('%P25%', '%Project 25%');
+    } else {
+      typeClause = ' AND type ILIKE $1';
+      params.push(`%${type}%`);
+    }
+  }
+
   return Promise.all([
     getPool().query(`
       SELECT state_id, COUNT(*) as count
       FROM rr_systems
-      WHERE state_id IS NOT NULL
+      WHERE state_id IS NOT NULL${typeClause}
       GROUP BY state_id
-    `),
+    `, params),
     getPool().query(`
       SELECT county_id, COUNT(*) as count
       FROM rr_systems
-      WHERE county_id IS NOT NULL
+      WHERE county_id IS NOT NULL${typeClause}
       GROUP BY county_id
-    `),
+    `, params),
   ]).then(([stateResult, countyResult]) => {
     const byState: Record<number, number> = {};
     for (const row of stateResult.rows) {
@@ -388,4 +404,135 @@ export async function getSystemsForStateScan(stateId: number): Promise<RRSystem[
     ORDER BY s.name
   `, [stateId]);
   return result.rows;
+}
+
+// Upsert operations for backfill
+export async function upsertSite(site: RRSite): Promise<void> {
+  await getPool().query(`
+    INSERT INTO rr_sites (id, system_id, name, description, rfss, site_id, county_id, latitude, longitude, range_miles, last_synced, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      description = EXCLUDED.description,
+      rfss = EXCLUDED.rfss,
+      site_id = EXCLUDED.site_id,
+      county_id = EXCLUDED.county_id,
+      latitude = EXCLUDED.latitude,
+      longitude = EXCLUDED.longitude,
+      range_miles = EXCLUDED.range_miles,
+      last_synced = NOW(),
+      updated_at = NOW()
+  `, [
+    site.id,
+    site.systemId,
+    site.name,
+    site.description || null,
+    site.rfss || null,
+    site.siteId || null,
+    site.countyId || null,
+    site.latitude || null,
+    site.longitude || null,
+    site.rangeMiles || null,
+  ]);
+}
+
+export async function upsertFrequency(freq: RRFrequency): Promise<void> {
+  // Use site_id + frequency as unique constraint
+  await getPool().query(`
+    INSERT INTO rr_frequencies (site_id, system_id, frequency, channel_type, lcn, is_primary, last_synced)
+    VALUES ($1, $2, $3, $4, $5, $6, NOW())
+    ON CONFLICT (id) DO UPDATE SET
+      channel_type = EXCLUDED.channel_type,
+      lcn = EXCLUDED.lcn,
+      is_primary = EXCLUDED.is_primary,
+      last_synced = NOW()
+  `, [
+    freq.siteId,
+    freq.systemId,
+    freq.frequency,
+    freq.channelType,
+    freq.lcn || null,
+    freq.isPrimary,
+  ]);
+}
+
+export async function insertFrequencies(frequencies: RRFrequency[]): Promise<void> {
+  if (frequencies.length === 0) return;
+
+  // Insert one at a time for simplicity and error handling
+  for (const freq of frequencies) {
+    try {
+      await getPool().query(`
+        INSERT INTO rr_frequencies (site_id, system_id, frequency, channel_type, lcn, is_primary, last_synced)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        ON CONFLICT DO NOTHING
+      `, [
+        freq.siteId,
+        freq.systemId,
+        freq.frequency,
+        freq.channelType,
+        freq.lcn || null,
+        freq.isPrimary,
+      ]);
+    } catch (err) {
+      // Skip duplicates or constraint violations
+      console.warn(`Failed to insert frequency ${freq.frequency} for site ${freq.siteId}:`, err);
+    }
+  }
+}
+
+export async function insertSites(sites: RRSite[]): Promise<void> {
+  if (sites.length === 0) return;
+
+  for (const site of sites) {
+    await upsertSite(site);
+  }
+}
+
+// Get systems that need frequency data
+export async function getSystemsWithoutFrequencies(limit = 100): Promise<{ id: number; name: string }[]> {
+  const result = await getPool().query(`
+    SELECT s.id, s.name
+    FROM rr_systems s
+    LEFT JOIN rr_frequencies f ON s.id = f.system_id
+    WHERE f.id IS NULL
+    ORDER BY s.id
+    LIMIT $1
+  `, [limit]);
+  return result.rows;
+}
+
+// Update system details (WACN, NAC, etc.)
+export async function updateSystemDetails(systemId: number, details: Partial<RRSystem>): Promise<void> {
+  const updates: string[] = [];
+  const params: any[] = [];
+  let paramIndex = 1;
+
+  if (details.wacn !== undefined) {
+    updates.push(`wacn = $${paramIndex++}`);
+    params.push(details.wacn);
+  }
+  if (details.nac !== undefined) {
+    updates.push(`nac = $${paramIndex++}`);
+    params.push(details.nac);
+  }
+  if (details.systemId !== undefined) {
+    updates.push(`system_id = $${paramIndex++}`);
+    params.push(details.systemId);
+  }
+  if (details.flavor !== undefined) {
+    updates.push(`flavor = $${paramIndex++}`);
+    params.push(details.flavor);
+  }
+
+  if (updates.length === 0) return;
+
+  updates.push(`updated_at = NOW()`);
+  params.push(systemId);
+
+  await getPool().query(`
+    UPDATE rr_systems
+    SET ${updates.join(', ')}
+    WHERE id = $${paramIndex}
+  `, params);
 }
