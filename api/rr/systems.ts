@@ -1,10 +1,26 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { query } from '../lib/db-helper';
+
+async function getClient(): Promise<any> {
+  const pg = await import('pg');
+  const { Client } = pg.default || pg;
+
+  const connectionString = process.env.POSTGRES_URL || '';
+  const cleanConnectionString = connectionString.replace(/[?&]sslmode=[^&]*/gi, '');
+
+  const client = new Client({
+    connectionString: cleanConnectionString,
+    ssl: { rejectUnauthorized: false },
+  });
+  await client.connect();
+  return client;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  const client = await getClient();
 
   try {
     const state = req.query.state ? parseInt(req.query.state as string) : undefined;
@@ -79,8 +95,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       countParams.push(`%${search}%`);
     }
 
-    const result = await query(queryStr, params);
-    const countResult = await query(countQueryStr, countParams);
+    const result = await client.query(queryStr, params);
+    const countResult = await client.query(countQueryStr, countParams);
 
     return res.status(200).json({
       systems: result.rows,
@@ -89,5 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (error: any) {
     console.error('Error fetching systems:', error);
     return res.status(500).json({ error: 'Failed to fetch systems', message: error.message });
+  } finally {
+    await client.end();
   }
 }
