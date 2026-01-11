@@ -22,10 +22,33 @@ import {
   AUDIO_DIRECTION_INCOMING,
 } from './avtec-protocol.js';
 
-interface AvtecStreamerConfig {
+export interface AvtecStreamerConfig {
   targetHost: string;
   targetPort: number;
   enabled: boolean;
+}
+
+export interface AvtecStreamerStatus {
+  enabled: boolean;
+  connected: boolean;
+  targetHost: string;
+  targetPort: number;
+  activeCalls: number;
+  stats: {
+    packetsUdpSent: number;
+    packetsTcpSent: number;
+    bytesUdpSent: number;
+    bytesTcpSent: number;
+    udpErrors: number;
+    tcpErrors: number;
+    callsStarted: number;
+    callsEnded: number;
+    lastPacketTime: number | null;
+    lastConnectionTime: number | null;
+    lastError: string | null;
+    lastErrorTime: number | null;
+  };
+  uptime: number;
 }
 
 interface ActiveCall {
@@ -47,6 +70,21 @@ export class AvtecStreamer extends EventEmitter {
   private sessionIdCounter = 1;
   private connected = false;
   private reconnectTimeout: NodeJS.Timeout | null = null;
+  private startTime: number | null = null;
+  private stats = {
+    packetsUdpSent: 0,
+    packetsTcpSent: 0,
+    bytesUdpSent: 0,
+    bytesTcpSent: 0,
+    udpErrors: 0,
+    tcpErrors: 0,
+    callsStarted: 0,
+    callsEnded: 0,
+    lastPacketTime: null as number | null,
+    lastConnectionTime: null as number | null,
+    lastError: null as string | null,
+    lastErrorTime: null as number | null,
+  };
 
   constructor(config: Partial<AvtecStreamerConfig> = {}) {
     super();
@@ -54,6 +92,57 @@ export class AvtecStreamer extends EventEmitter {
       targetHost: config.targetHost || '127.0.0.1',
       targetPort: config.targetPort || 50911,
       enabled: config.enabled ?? true,
+    };
+  }
+
+  /**
+   * Get current configuration
+   */
+  getConfig(): AvtecStreamerConfig {
+    return { ...this.config };
+  }
+
+  /**
+   * Update configuration (requires restart to take effect for host/port changes)
+   */
+  async updateConfig(newConfig: Partial<AvtecStreamerConfig>): Promise<void> {
+    const wasEnabled = this.config.enabled;
+    const hostChanged = newConfig.targetHost !== undefined && newConfig.targetHost !== this.config.targetHost;
+    const portChanged = newConfig.targetPort !== undefined && newConfig.targetPort !== this.config.targetPort;
+
+    // Update config
+    if (newConfig.targetHost !== undefined) this.config.targetHost = newConfig.targetHost;
+    if (newConfig.targetPort !== undefined) this.config.targetPort = newConfig.targetPort;
+    if (newConfig.enabled !== undefined) this.config.enabled = newConfig.enabled;
+
+    // Handle enable/disable
+    if (!wasEnabled && this.config.enabled) {
+      // Was disabled, now enabled - start
+      await this.start();
+    } else if (wasEnabled && !this.config.enabled) {
+      // Was enabled, now disabled - stop
+      this.stop();
+    } else if (this.config.enabled && (hostChanged || portChanged)) {
+      // Config changed while enabled - restart connection
+      this.stop();
+      await this.start();
+    }
+
+    this.emit('configChanged', this.config);
+  }
+
+  /**
+   * Get current status including stats
+   */
+  getStatus(): AvtecStreamerStatus {
+    return {
+      enabled: this.config.enabled,
+      connected: this.connected,
+      targetHost: this.config.targetHost,
+      targetPort: this.config.targetPort,
+      activeCalls: this.activeCalls.size,
+      stats: { ...this.stats },
+      uptime: this.startTime ? Date.now() - this.startTime : 0,
     };
   }
 
@@ -66,12 +155,16 @@ export class AvtecStreamer extends EventEmitter {
       return;
     }
 
+    this.startTime = Date.now();
     console.log(`[AvtecStreamer] Starting - connecting to ${this.config.targetHost}:${this.config.targetPort}`);
 
     // Create UDP socket for audio
     this.udpSocket = createSocket('udp4');
     this.udpSocket.on('error', (err) => {
       console.error('[AvtecStreamer] UDP socket error:', err);
+      this.stats.udpErrors++;
+      this.stats.lastError = `UDP: ${err.message}`;
+      this.stats.lastErrorTime = Date.now();
     });
 
     // Connect TCP socket for metadata
@@ -98,6 +191,7 @@ export class AvtecStreamer extends EventEmitter {
         () => {
           console.log('[AvtecStreamer] TCP connected');
           this.connected = true;
+          this.stats.lastConnectionTime = Date.now();
           this.emit('connected');
           resolve();
         }
@@ -106,6 +200,9 @@ export class AvtecStreamer extends EventEmitter {
       this.tcpSocket.on('error', (err) => {
         console.error('[AvtecStreamer] TCP error:', err.message);
         this.connected = false;
+        this.stats.tcpErrors++;
+        this.stats.lastError = `TCP: ${err.message}`;
+        this.stats.lastErrorTime = Date.now();
         this.scheduleReconnect();
       });
 
@@ -185,6 +282,7 @@ export class AvtecStreamer extends EventEmitter {
     );
 
     this.sendMetadata(packet);
+    this.stats.callsStarted++;
 
     console.log(
       `[AvtecStreamer] Call started: ${call.id} TG:${call.talkgroupId} (${activeCall.alphaTag}) sessionId:${sessionId} ssrc:${ssrc}`
@@ -206,6 +304,7 @@ export class AvtecStreamer extends EventEmitter {
     // The call will naturally end when audio stops
 
     this.activeCalls.delete(callId);
+    this.stats.callsEnded++;
 
     console.log(`[AvtecStreamer] Call ended: ${callId} TG:${activeCall.talkgroupId}`);
   }
@@ -271,6 +370,13 @@ export class AvtecStreamer extends EventEmitter {
     this.udpSocket.send(rtpPacket, this.config.targetPort, this.config.targetHost, (err) => {
       if (err) {
         console.error('[AvtecStreamer] UDP send error:', err);
+        this.stats.udpErrors++;
+        this.stats.lastError = `UDP send: ${err.message}`;
+        this.stats.lastErrorTime = Date.now();
+      } else {
+        this.stats.packetsUdpSent++;
+        this.stats.bytesUdpSent += rtpPacket.length;
+        this.stats.lastPacketTime = Date.now();
       }
     });
   }
@@ -287,6 +393,12 @@ export class AvtecStreamer extends EventEmitter {
     this.tcpSocket.write(packet, (err) => {
       if (err) {
         console.error('[AvtecStreamer] TCP write error:', err);
+        this.stats.tcpErrors++;
+        this.stats.lastError = `TCP write: ${err.message}`;
+        this.stats.lastErrorTime = Date.now();
+      } else {
+        this.stats.packetsTcpSent++;
+        this.stats.bytesTcpSent += packet.length;
       }
     });
   }
@@ -322,6 +434,28 @@ export class AvtecStreamer extends EventEmitter {
 
     this.connected = false;
     this.activeCalls.clear();
+    this.startTime = null;
+    this.emit('stopped');
+  }
+
+  /**
+   * Reset statistics
+   */
+  resetStats(): void {
+    this.stats = {
+      packetsUdpSent: 0,
+      packetsTcpSent: 0,
+      bytesUdpSent: 0,
+      bytesTcpSent: 0,
+      udpErrors: 0,
+      tcpErrors: 0,
+      callsStarted: 0,
+      callsEnded: 0,
+      lastPacketTime: null,
+      lastConnectionTime: null,
+      lastError: null,
+      lastErrorTime: null,
+    };
   }
 
   /**

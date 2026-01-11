@@ -15,11 +15,13 @@ A real-time P25 trunked radio scanner web application that captures radio traffi
 9. [Setup and Configuration](#setup-and-configuration)
 10. [Quick Install Scripts](#quick-install-scripts) (Windows, macOS, Linux)
 11. [Connecting to trunk-recorder](#connecting-to-trunk-recorder)
-12. [Internal Data Flow (Mermaid Diagram)](#internal-data-flow-mermaid-diagram)
-13. [How Audio Recordings Work](#how-audio-recordings-work)
-14. [How Live Audio Streaming Works](#how-live-audio-streaming-works)
-15. [API Endpoints Reference](#api-endpoints-reference)
-16. [WebSocket Messages Reference](#websocket-messages-reference)
+12. [Installing trunk-recorder](#installing-trunk-recorder)
+13. [Internal Data Flow (Mermaid Diagram)](#internal-data-flow-mermaid-diagram)
+14. [How Audio Recordings Work](#how-audio-recordings-work)
+15. [How Live Audio Streaming Works](#how-live-audio-streaming-works)
+16. [API Endpoints Reference](#api-endpoints-reference)
+17. [WebSocket Messages Reference](#websocket-messages-reference)
+18. [Avtec Integration](./AVTEC.md) (for Prepared911 audio-collector)
 
 ---
 
@@ -766,7 +768,9 @@ cd trunk-recorder
 
 ## Quick Install Scripts
 
-The easiest way to install is using the provided installation scripts that handle everything automatically.
+The easiest way to install the **web application** is using the provided installation scripts. These scripts handle Node.js and npm dependencies automatically.
+
+> **Note:** These scripts install the web interface only. To receive actual radio traffic, you also need [trunk-recorder](#installing-trunk-recorder) with an RTL-SDR device.
 
 ### Windows (PowerShell)
 
@@ -914,6 +918,168 @@ sudo firewall-cmd --add-port=3000/tcp --permanent
 sudo firewall-cmd --add-port=3001/tcp --permanent
 sudo firewall-cmd --add-port=9000/udp --permanent
 sudo firewall-cmd --reload
+```
+
+---
+
+## Installing trunk-recorder
+
+trunk-recorder is a separate C++ application that decodes P25 radio signals from an RTL-SDR device. It requires its own dependencies beyond what npm provides.
+
+### Hardware Required
+
+- **RTL-SDR v3** (or compatible SDR) - ~$30 USB dongle
+- **Antenna** suitable for 700-900 MHz (for P25 systems)
+
+### Option 1: Pre-built Packages (Easiest)
+
+**Ubuntu/Debian:**
+```bash
+# Add trunk-recorder PPA
+sudo add-apt-repository ppa:robotastic/trunk-recorder
+sudo apt update
+sudo apt install trunk-recorder
+```
+
+**Arch Linux (AUR):**
+```bash
+yay -S trunk-recorder
+```
+
+### Option 2: Build from Source
+
+**Ubuntu/Debian:**
+```bash
+# Install dependencies
+sudo apt update
+sudo apt install -y \
+  git cmake build-essential \
+  gnuradio-dev libuhd-dev libhackrf-dev \
+  gr-osmosdr libsndfile1-dev libssl-dev \
+  libcurl4-openssl-dev pkg-config \
+  fdkaac sox
+
+# Clone and build
+git clone https://github.com/robotastic/trunk-recorder.git
+cd trunk-recorder
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+sudo make install
+```
+
+**macOS (Homebrew):**
+```bash
+# Install dependencies
+brew install cmake gnuradio hackrf librtlsdr uhd libsndfile openssl curl pkg-config sox fdkaac
+
+# Clone and build
+git clone https://github.com/robotastic/trunk-recorder.git
+cd trunk-recorder
+mkdir build && cd build
+cmake ..
+make -j$(sysctl -n hw.ncpu)
+```
+
+**Windows (WSL2 recommended):**
+
+trunk-recorder is primarily designed for Linux. On Windows, use WSL2:
+
+```powershell
+# Install WSL2 with Ubuntu
+wsl --install -d Ubuntu
+
+# Then follow Ubuntu instructions above inside WSL2
+```
+
+### RTL-SDR Driver Setup
+
+**Linux:**
+```bash
+# Install RTL-SDR tools
+sudo apt install rtl-sdr
+
+# Blacklist kernel DVB drivers (required)
+echo 'blacklist dvb_usb_rtl28xxu' | sudo tee /etc/modprobe.d/blacklist-rtl.conf
+sudo modprobe -r dvb_usb_rtl28xxu
+
+# Test RTL-SDR
+rtl_test -t
+```
+
+**macOS:**
+```bash
+brew install librtlsdr
+rtl_test -t
+```
+
+**Windows:**
+Use [Zadig](https://zadig.akeo.ie/) to install WinUSB driver for the RTL-SDR device.
+
+### Verifying Installation
+
+```bash
+# Check trunk-recorder is installed
+trunk-recorder --help
+
+# Test RTL-SDR device
+rtl_test -t
+# Should show: "Found 1 device(s)"
+```
+
+### trunk-recorder Configuration
+
+Create a `config.json` in your trunk-recorder directory:
+
+```json
+{
+  "ver": 2,
+  "sources": [{
+    "center": 851000000,
+    "rate": 2400000,
+    "gain": 40,
+    "digitalRecorders": 4,
+    "driver": "osmosdr",
+    "device": "rtl=0"
+  }],
+  "systems": [{
+    "shortName": "example",
+    "type": "p25",
+    "control_channels": [851012500, 851262500],
+    "modulation": "qpsk",
+    "talkgroupsFile": "talkgroups.csv"
+  }],
+  "statusServer": "ws://127.0.0.1:3001",
+  "simpleStream": {
+    "streams": [{
+      "address": "127.0.0.1",
+      "port": 9000,
+      "sendTGID": true,
+      "sendJSON": true,
+      "shortName": "example"
+    }]
+  },
+  "captureDir": "./audio",
+  "logFile": "/tmp/trunk-recorder.log"
+}
+```
+
+Key configuration:
+- `center`: Center frequency to tune to (Hz)
+- `control_channels`: Your local P25 control channel frequencies
+- `statusServer`: WebSocket URL for this Radio Scanner
+- `simpleStream`: UDP audio stream to this Radio Scanner
+
+### Running trunk-recorder
+
+```bash
+cd /path/to/trunk-recorder
+./trunk-recorder --config=config.json
+```
+
+Or with logging:
+```bash
+./trunk-recorder --config=config.json 2>&1 | tee /tmp/trunk-recorder-output.log
 ```
 
 ---

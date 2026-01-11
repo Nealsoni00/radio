@@ -145,9 +145,9 @@ async function main() {
 
   // Initialize Avtec streamer for streaming to Prepared911 audio-client
   const avtecStreamer = new AvtecStreamer({
-    targetHost: '127.0.0.1',
-    targetPort: 50911,
-    enabled: true,
+    targetHost: process.env.AVTEC_HOST || '127.0.0.1',
+    targetPort: parseInt(process.env.AVTEC_PORT || '50911'),
+    enabled: process.env.AVTEC_ENABLED !== 'false',
   });
 
   // Register API routes
@@ -203,6 +203,36 @@ async function main() {
     const { count = '100' } = request.query as { count?: string };
     const events = await logWatcher.getRecentEvents(parseInt(count, 10));
     return { events };
+  });
+
+  // Avtec integration endpoints
+  app.get('/api/avtec/status', async () => {
+    return avtecStreamer.getStatus();
+  });
+
+  app.get('/api/avtec/config', async () => {
+    return avtecStreamer.getConfig();
+  });
+
+  app.put('/api/avtec/config', async (request) => {
+    const body = request.body as {
+      targetHost?: string;
+      targetPort?: number;
+      enabled?: boolean;
+    };
+
+    // Validate
+    if (body.targetPort !== undefined && (body.targetPort < 1 || body.targetPort > 65535)) {
+      throw new Error('Invalid port number');
+    }
+
+    await avtecStreamer.updateConfig(body);
+    return { success: true, config: avtecStreamer.getConfig() };
+  });
+
+  app.post('/api/avtec/reset-stats', async () => {
+    avtecStreamer.resetStats();
+    return { success: true };
   });
 
   // Ensure Fastify is ready before creating HTTP server
