@@ -146,7 +146,7 @@ export async function getRRSystem(id: number): Promise<{
   talkgroups: RRTalkgroup[];
   talkgroupCount: number;
 }> {
-  const response = await fetch(`${API_BASE}/rr/systems/${id}`);
+  const response = await fetch(`${API_BASE}/rr/system/${id}`);
   if (!response.ok) throw new Error('Failed to fetch system');
   return response.json();
 }

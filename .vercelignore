@@ -1,0 +1,47 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs
+server/dist
+tr-build
+trunk-recorder
+
+# Database files
+*.db
+*.sqlite
+server/data
+
+# Development files
+.git
+.github
+.DS_Store
+*.log
+*.tmp
+
+# IDE
+.vscode
+.idea
+
+# Documentation
+*.md
+docs
+
+# Test files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__
+
+# Config files not needed for deployment
+justfile
+install-*.sh
+install-*.ps1
+CLAUDE.md
+TESTING.md
+ARCHITECTURE.md
+AVTEC.md
+
+# Server (we use API routes instead)
+server
