@@ -24,6 +24,7 @@ import { FFTReplayer } from './services/spectrum/fft-replayer.js';
 import { frequencyScanner } from './services/spectrum/frequency-scanner.js';
 import { channelTracker } from './services/spectrum/channel-tracker.js';
 import { detectRTLDevices } from './services/sdr/rtl-detect.js';
+import { AvtecStreamer } from './services/avtec/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 /**
@@ -111,6 +112,12 @@ async function main() {
         ? '/tmp/trunk-recorder-output.log'
         : '/tmp/trunk-recorder.log';
     const logWatcher = new LogWatcher(trLogPath);
+    // Initialize Avtec streamer for streaming to Prepared911 audio-client
+    const avtecStreamer = new AvtecStreamer({
+        targetHost: '127.0.0.1',
+        targetPort: 50911,
+        enabled: true,
+    });
     // Register API routes
     await app.register(callRoutes);
     await app.register(talkgroupRoutes);
@@ -198,6 +205,15 @@ async function main() {
             emergency: false,
             encrypted: false,
         });
+        // Stream to Avtec audio-client
+        avtecStreamer.handleCallStart({
+            id: consistentCallId,
+            talkgroupId: call.talkgroup,
+            alphaTag: call.talkgrouptag,
+            frequency: call.freq,
+            startTime: startTime,
+            emergency: false,
+        });
     });
     trStatusServer.on('callEnd', (call) => {
         console.log(`Call ended: TG ${call.talkgroup} (${call.talkgrouptag}) - ${call.length}s`);
@@ -235,6 +251,8 @@ async function main() {
         };
         console.log(`  → Broadcasting callEnd with ID: "${consistentCallId}", audioFile: "${audioPath}"`);
         broadcastServer.broadcastCallEnd(broadcastPayload);
+        // Notify Avtec streamer of call end
+        avtecStreamer.handleCallEnd(consistentCallId);
     });
     trStatusServer.on('callsActive', (calls) => {
         // Update channel tracker with full list of active calls
@@ -284,6 +302,11 @@ async function main() {
             },
         };
         broadcastServer.broadcastAudio(enrichedPacket);
+        // Stream audio to Avtec audio-client (expects 16-bit PCM at 8000 Hz)
+        // pcmData is already a Buffer, pass it directly
+        if (packet.pcmData && packet.pcmData.length > 0) {
+            avtecStreamer.handleAudioPacket(packet.talkgroupId, packet.pcmData);
+        }
     });
     fftReceiver.on('fft', (packet) => {
         // Broadcast live FFT to clients
@@ -328,6 +351,7 @@ async function main() {
     fftReceiver.start();
     fileWatcher.start();
     logWatcher.start();
+    await avtecStreamer.start();
     // Start Fastify server
     await app.listen({ port: config.server.port, host: config.server.host });
     console.log(`Server listening on http://${config.server.host}:${config.server.port}`);
@@ -340,6 +364,7 @@ async function main() {
         audioReceiver.stop();
         fftReceiver.stop();
         fileWatcher.stop();
+        avtecStreamer.stop();
         await app.close();
         console.log('Server closed');
         process.exit(0);
