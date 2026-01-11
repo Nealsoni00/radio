@@ -25,6 +25,7 @@ interface StreamState {
   alphaTag?: string;
   frequency?: number;
   isActive: boolean;
+  activeSince: number; // When this stream first became active (for stable ordering)
 }
 
 const MAX_VISIBLE_STREAMS = 6;
