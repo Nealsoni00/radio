@@ -13,8 +13,8 @@ export function Header() {
 
   return (
     <header className="bg-slate-800 border-b border-slate-700 px-4 py-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between gap-8">
+        <div className="flex items-center gap-6 flex-shrink-0">
           <h1 className="text-xl font-bold text-white">Radio Scanner</h1>
           <span className={`text-sm ${activeSystem ? 'text-green-400' : 'text-slate-500'}`}>
             {systemDisplayName}
