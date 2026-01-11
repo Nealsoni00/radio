@@ -1,3 +1,36 @@
+export type SystemType = 'p25' | 'p25_conventional' | 'conventional' | 'conventionalDMR' | 'conventionalP25';
+export interface SystemConfig {
+    shortName: string;
+    type: SystemType;
+    /** For trunked systems - control channel frequencies */
+    controlChannels?: number[];
+    /** For conventional systems - fixed channel definitions */
+    channels?: ConventionalChannel[];
+    channelFile?: string;
+    talkgroupsFile?: string;
+}
+export interface ConventionalChannel {
+    frequency: number;
+    alphaTag: string;
+    description?: string;
+    groupName?: string;
+    groupTag?: string;
+    mode?: 'D' | 'A';
+    squelch?: number;
+}
+/** Database row from channels table (for conventional systems) */
+export interface ChannelRow {
+    id: number;
+    frequency: number;
+    alpha_tag: string;
+    description: string | null;
+    group_name: string | null;
+    group_tag: string | null;
+    mode: string;
+    system_type: string;
+    created_at: number;
+    updated_at: number;
+}
 /** Database row from talkgroups table */
 export interface TalkgroupRow {
     id: number;
@@ -9,7 +42,7 @@ export interface TalkgroupRow {
     created_at: number;
     updated_at: number;
 }
-/** Database row from calls table with joined talkgroup fields */
+/** Database row from calls table with joined talkgroup/channel fields */
 export interface CallRow {
     id: string;
     talkgroup_id: number;
@@ -21,6 +54,8 @@ export interface CallRow {
     encrypted: number;
     audio_file: string | null;
     audio_type: string | null;
+    system_type: string | null;
+    channel_id: number | null;
     created_at: number;
     alpha_tag?: string;
     talkgroup_description?: string;
@@ -46,6 +81,17 @@ export interface Talkgroup {
     groupTag: string | null;
     mode: string;
 }
+/** Channel for conventional systems - frequency-based instead of talkgroup-based */
+export interface Channel {
+    id: number;
+    frequency: number;
+    alphaTag: string;
+    description: string | null;
+    groupName: string | null;
+    groupTag: string | null;
+    mode: string;
+    systemType: string;
+}
 export interface Call {
     id: string;
     talkgroupId: number;
@@ -57,6 +103,8 @@ export interface Call {
     encrypted: boolean;
     audioFile: string | null;
     audioType: string | null;
+    systemType?: 'trunked' | 'conventional';
+    channelId?: number | null;
     alphaTag?: string;
     groupName?: string;
     groupTag?: string;

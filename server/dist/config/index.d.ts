@@ -1,7 +1,12 @@
+import type { SystemType } from '../types/index.js';
 export declare const config: {
     server: {
         port: number;
         host: string;
+    };
+    system: {
+        type: SystemType;
+        shortName: string;
     };
     trunkRecorder: {
         statusUrl: string;

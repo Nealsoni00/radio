@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import type { SystemType } from '../types/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -8,6 +9,14 @@ export const config = {
   server: {
     port: parseInt(process.env.PORT || '3000', 10),
     host: process.env.HOST || '0.0.0.0',
+  },
+
+  // System type determines how we interpret trunk-recorder messages
+  // 'p25' = trunked P25 (uses control channel, talkgroups)
+  // 'p25_conventional' or 'conventional' = conventional (fixed frequencies, channels)
+  system: {
+    type: (process.env.SYSTEM_TYPE || 'p25') as SystemType,
+    shortName: process.env.SYSTEM_SHORT_NAME || 'default',
   },
 
   trunkRecorder: {

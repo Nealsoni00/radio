@@ -1,6 +1,8 @@
 import type {
   Call,
   Talkgroup,
+  Channel,
+  SystemConfig,
   CallSource,
   SDRConfig,
   ActiveSystemInfo,
@@ -516,5 +518,99 @@ export async function getSystemStatus(): Promise<{
 }> {
   const response = await fetch(`${API_BASE}/system/status`);
   if (!response.ok) throw new Error('Failed to fetch system status');
+  return response.json();
+}
+
+// Avtec Integration API
+export interface AvtecConfig {
+  targetHost: string;
+  targetPort: number;
+  enabled: boolean;
+}
+
+export interface AvtecStatus {
+  enabled: boolean;
+  connected: boolean;
+  targetHost: string;
+  targetPort: number;
+  activeCalls: number;
+  stats: {
+    packetsUdpSent: number;
+    packetsTcpSent: number;
+    bytesUdpSent: number;
+    bytesTcpSent: number;
+    udpErrors: number;
+    tcpErrors: number;
+    callsStarted: number;
+    callsEnded: number;
+    lastPacketTime: number | null;
+    lastConnectionTime: number | null;
+    lastError: string | null;
+    lastErrorTime: number | null;
+  };
+  uptime: number;
+}
+
+export async function getAvtecStatus(): Promise<AvtecStatus> {
+  const response = await fetch(`${API_BASE}/avtec/status`);
+  if (!response.ok) throw new Error('Failed to fetch Avtec status');
+  return response.json();
+}
+
+export async function getAvtecConfig(): Promise<AvtecConfig> {
+  const response = await fetch(`${API_BASE}/avtec/config`);
+  if (!response.ok) throw new Error('Failed to fetch Avtec config');
+  return response.json();
+}
+
+export async function updateAvtecConfig(config: Partial<AvtecConfig>): Promise<{ success: boolean; config: AvtecConfig }> {
+  const response = await fetch(`${API_BASE}/avtec/config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Failed to update Avtec config');
+  }
+  return response.json();
+}
+
+export async function resetAvtecStats(): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/avtec/reset-stats`, { method: 'POST' });
+  if (!response.ok) throw new Error('Failed to reset Avtec stats');
+  return response.json();
+}
+
+// System Config API (for conventional vs trunked)
+export async function getSystemConfig(): Promise<SystemConfig> {
+  const response = await fetch(`${API_BASE}/system/config`);
+  if (!response.ok) throw new Error('Failed to fetch system config');
+  return response.json();
+}
+
+export async function updateSystemConfig(config: { type?: string; shortName?: string }): Promise<{ success: boolean; config: SystemConfig }> {
+  const response = await fetch(`${API_BASE}/system/config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Failed to update system config');
+  }
+  return response.json();
+}
+
+// Channels API (for conventional systems)
+export async function getChannels(): Promise<{ channels: Channel[] }> {
+  const response = await fetch(`${API_BASE}/channels`);
+  if (!response.ok) throw new Error('Failed to fetch channels');
+  return response.json();
+}
+
+export async function getChannelByFrequency(frequency: number): Promise<{ channel: Channel }> {
+  const response = await fetch(`${API_BASE}/channels/${frequency}`);
+  if (!response.ok) throw new Error('Failed to fetch channel');
   return response.json();
 }

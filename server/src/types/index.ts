@@ -1,6 +1,47 @@
 // =============================================================================
+// System Configuration Types
+// =============================================================================
+
+export type SystemType = 'p25' | 'p25_conventional' | 'conventional' | 'conventionalDMR' | 'conventionalP25';
+
+export interface SystemConfig {
+  shortName: string;
+  type: SystemType;
+  /** For trunked systems - control channel frequencies */
+  controlChannels?: number[];
+  /** For conventional systems - fixed channel definitions */
+  channels?: ConventionalChannel[];
+  channelFile?: string;
+  talkgroupsFile?: string;
+}
+
+export interface ConventionalChannel {
+  frequency: number;
+  alphaTag: string;
+  description?: string;
+  groupName?: string;
+  groupTag?: string;
+  mode?: 'D' | 'A'; // Digital or Analog
+  squelch?: number;
+}
+
+// =============================================================================
 // Database Row Types (snake_case, matching SQLite schema)
 // =============================================================================
+
+/** Database row from channels table (for conventional systems) */
+export interface ChannelRow {
+  id: number;
+  frequency: number;
+  alpha_tag: string;
+  description: string | null;
+  group_name: string | null;
+  group_tag: string | null;
+  mode: string;
+  system_type: string;
+  created_at: number;
+  updated_at: number;
+}
 
 /** Database row from talkgroups table */
 export interface TalkgroupRow {
@@ -14,7 +55,7 @@ export interface TalkgroupRow {
   updated_at: number;
 }
 
-/** Database row from calls table with joined talkgroup fields */
+/** Database row from calls table with joined talkgroup/channel fields */
 export interface CallRow {
   id: string;
   talkgroup_id: number;
@@ -26,8 +67,10 @@ export interface CallRow {
   encrypted: number; // SQLite boolean (0/1)
   audio_file: string | null;
   audio_type: string | null;
+  system_type: string | null; // 'trunked' or 'conventional'
+  channel_id: number | null; // For conventional systems
   created_at: number;
-  // Joined fields from talkgroups
+  // Joined fields from talkgroups or channels
   alpha_tag?: string;
   talkgroup_description?: string;
   group_name?: string;
@@ -60,6 +103,18 @@ export interface Talkgroup {
   mode: string;
 }
 
+/** Channel for conventional systems - frequency-based instead of talkgroup-based */
+export interface Channel {
+  id: number;
+  frequency: number;
+  alphaTag: string;
+  description: string | null;
+  groupName: string | null;
+  groupTag: string | null;
+  mode: string;
+  systemType: string;
+}
+
 export interface Call {
   id: string;
   talkgroupId: number;
@@ -71,6 +126,8 @@ export interface Call {
   encrypted: boolean;
   audioFile: string | null;
   audioType: string | null;
+  systemType?: 'trunked' | 'conventional';
+  channelId?: number | null; // For conventional systems
   // Joined fields
   alphaTag?: string;
   groupName?: string;

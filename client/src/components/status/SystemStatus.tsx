@@ -3,6 +3,7 @@ import { useConnectionStore, useAudioStore, useCallsStore } from '../../store';
 import { useFFTStore } from '../../store/fft';
 import { useSystemStore } from '../../store/system';
 import { getHealth } from '../../services/api';
+import { AvtecConfigPanel } from '../settings';
 
 function formatFrequency(freq: number): string {
   return (freq / 1000000).toFixed(3);
@@ -135,6 +136,9 @@ export function SystemStatus() {
             status={fftEnabled && isConnected}
             color={getFFTColor()}
           />
+          <div className="border-l border-slate-600 pl-3 ml-1">
+            <AvtecConfigPanel />
+          </div>
         </div>
         <div className="flex items-center gap-4 text-slate-400">
           {serverReachable ? (

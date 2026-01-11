@@ -60,6 +60,7 @@ interface ActiveCall {
   talkgroupId: number;
   alphaTag: string;
   startTime: number;
+  lastAudioTime: number;
 }
 
 export class AvtecStreamer extends EventEmitter {
@@ -70,7 +71,9 @@ export class AvtecStreamer extends EventEmitter {
   private sessionIdCounter = 1;
   private connected = false;
   private reconnectTimeout: NodeJS.Timeout | null = null;
+  private cleanupInterval: NodeJS.Timeout | null = null;
   private startTime: number | null = null;
+  private static readonly CALL_TIMEOUT_MS = 10000; // Cleanup calls after 10s of no audio
   private stats = {
     packetsUdpSent: 0,
     packetsTcpSent: 0,
@@ -169,6 +172,32 @@ export class AvtecStreamer extends EventEmitter {
 
     // Connect TCP socket for metadata
     await this.connectTcp();
+
+    // Start cleanup interval for stale calls
+    this.cleanupInterval = setInterval(() => this.cleanupStaleCalls(), 5000);
+  }
+
+  /**
+   * Clean up calls that haven't received audio recently
+   */
+  private cleanupStaleCalls(): void {
+    const now = Date.now();
+    const staleCalls: string[] = [];
+
+    for (const [callId, call] of this.activeCalls.entries()) {
+      if (now - call.lastAudioTime > AvtecStreamer.CALL_TIMEOUT_MS) {
+        staleCalls.push(callId);
+      }
+    }
+
+    for (const callId of staleCalls) {
+      const call = this.activeCalls.get(callId);
+      if (call) {
+        console.log(`[AvtecStreamer] Call timed out (no audio for ${AvtecStreamer.CALL_TIMEOUT_MS / 1000}s): ${callId} TG:${call.talkgroupId}`);
+        this.activeCalls.delete(callId);
+        this.stats.callsEnded++;
+      }
+    }
   }
 
   /**
@@ -192,6 +221,9 @@ export class AvtecStreamer extends EventEmitter {
           console.log('[AvtecStreamer] TCP connected');
           this.connected = true;
           this.stats.lastConnectionTime = Date.now();
+          // Clear the connection timeout - we're connected now
+          // Setting to 0 disables the idle timeout
+          this.tcpSocket?.setTimeout(0);
           this.emit('connected');
           resolve();
         }
@@ -266,6 +298,7 @@ export class AvtecStreamer extends EventEmitter {
       talkgroupId: call.talkgroupId,
       alphaTag: call.alphaTag || `TG ${call.talkgroupId}`,
       startTime: call.startTime,
+      lastAudioTime: Date.now(),
     };
 
     this.activeCalls.set(call.id, activeCall);
@@ -292,10 +325,46 @@ export class AvtecStreamer extends EventEmitter {
   /**
    * Handle call end event from trunk-recorder
    */
-  handleCallEnd(callId: string): void {
+  handleCallEnd(callId: string, talkgroupId?: number): void {
     if (!this.config.enabled) return;
 
-    const activeCall = this.activeCalls.get(callId);
+    // First try exact match by call ID
+    let activeCall = this.activeCalls.get(callId);
+    let foundCallId = callId;
+
+    // If not found by exact ID, try to find by talkgroup ID
+    if (!activeCall && talkgroupId !== undefined) {
+      for (const [id, call] of this.activeCalls.entries()) {
+        if (call.talkgroupId === talkgroupId) {
+          activeCall = call;
+          foundCallId = id;
+          break;
+        }
+      }
+    }
+
+    // If still not found, try to extract talkgroup from the call ID (format: tg-timestamp or auto-tg-timestamp)
+    if (!activeCall) {
+      const parts = callId.split('-');
+      let extractedTg: number | undefined;
+
+      if (parts[0] === 'auto' && parts.length >= 2) {
+        extractedTg = parseInt(parts[1], 10);
+      } else if (parts.length >= 1) {
+        extractedTg = parseInt(parts[0], 10);
+      }
+
+      if (extractedTg && !isNaN(extractedTg)) {
+        for (const [id, call] of this.activeCalls.entries()) {
+          if (call.talkgroupId === extractedTg) {
+            activeCall = call;
+            foundCallId = id;
+            break;
+          }
+        }
+      }
+    }
+
     if (!activeCall) {
       return;
     }
@@ -303,10 +372,10 @@ export class AvtecStreamer extends EventEmitter {
     // Send update packet indicating call end (optional, some receivers don't need this)
     // The call will naturally end when audio stops
 
-    this.activeCalls.delete(callId);
+    this.activeCalls.delete(foundCallId);
     this.stats.callsEnded++;
 
-    console.log(`[AvtecStreamer] Call ended: ${callId} TG:${activeCall.talkgroupId}`);
+    console.log(`[AvtecStreamer] Call ended: ${foundCallId} TG:${activeCall.talkgroupId}`);
   }
 
   /**
@@ -338,6 +407,9 @@ export class AvtecStreamer extends EventEmitter {
       activeCall = this.activeCalls.get(callId);
       if (!activeCall) return;
     }
+
+    // Update last audio time to keep the call alive
+    activeCall.lastAudioTime = Date.now();
 
     // Convert PCM to μ-law (G.711)
     // Debug: log input PCM size on first packet
@@ -420,6 +492,11 @@ export class AvtecStreamer extends EventEmitter {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
+    }
+
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
     }
 
     if (this.tcpSocket) {

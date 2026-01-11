@@ -8,9 +8,35 @@ import {
   getFrequencies,
   getTalkgroups,
 } from '../../db/radioreference.js';
+import { setSystemType, setSystemShortName } from '../../db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+/**
+ * Determine the system type config based on RadioReference system type string.
+ * Maps RadioReference type names to our internal system types.
+ */
+function determineSystemTypeFromRR(rrType: string): 'p25' | 'conventional' {
+  const typeLower = rrType.toLowerCase();
+
+  // Check for conventional system indicators
+  // Uses includes/startsWith for flexibility with variants like "LTR Standard", "EDACS Narrowband"
+  if (
+    typeLower.includes('conventional') ||
+    typeLower.startsWith('ltr') ||
+    typeLower.startsWith('edacs') ||
+    typeLower === 'passport' ||
+    typeLower === 'analog' ||
+    typeLower === 'mpt1327' ||
+    typeLower === 'idas'
+  ) {
+    return 'conventional';
+  }
+
+  // Default to p25 (trunked) for P25, TETRA, SmartNet, DMR Tier III, etc.
+  return 'p25';
+}
 
 export interface ActiveSystemInfo {
   id: number;
@@ -56,6 +82,12 @@ class SystemManager extends EventEmitter {
     if (!system) {
       throw new Error(`System ${systemId} not found`);
     }
+
+    // Auto-configure system type based on RadioReference system type
+    const determinedType = determineSystemTypeFromRR(system.type);
+    console.log(`Auto-configuring system type: ${system.type} -> ${determinedType}`);
+    setSystemType(determinedType);
+    setSystemShortName(system.name.substring(0, 50));
 
     // Get frequencies for the system
     const frequencies = getFrequencies(systemId);

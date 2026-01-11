@@ -7,6 +7,13 @@ export const config = {
         port: parseInt(process.env.PORT || '3000', 10),
         host: process.env.HOST || '0.0.0.0',
     },
+    // System type determines how we interpret trunk-recorder messages
+    // 'p25' = trunked P25 (uses control channel, talkgroups)
+    // 'p25_conventional' or 'conventional' = conventional (fixed frequencies, channels)
+    system: {
+        type: (process.env.SYSTEM_TYPE || 'p25'),
+        shortName: process.env.SYSTEM_SHORT_NAME || 'default',
+    },
     trunkRecorder: {
         statusUrl: process.env.TR_STATUS_URL || 'ws://127.0.0.1:3001',
         audioPort: parseInt(process.env.TR_AUDIO_PORT || '9000', 10),

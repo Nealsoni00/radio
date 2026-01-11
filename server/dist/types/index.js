@@ -1,5 +1,5 @@
 // =============================================================================
-// Database Row Types (snake_case, matching SQLite schema)
+// System Configuration Types
 // =============================================================================
 export {};
 //# sourceMappingURL=index.js.map

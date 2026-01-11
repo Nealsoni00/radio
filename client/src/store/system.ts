@@ -3,8 +3,11 @@ import {
   getActiveSystem,
   switchToSystem as apiSwitchToSystem,
   stopSystem as apiStopSystem,
+  getSystemConfig,
+  updateSystemConfig as apiUpdateSystemConfig,
   type ActiveSystemInfo,
 } from '../services/api';
+import type { SystemConfig } from '../types';
 
 const STORAGE_KEY = 'radio-active-system-id';
 
@@ -41,8 +44,14 @@ interface SystemState {
   isSwitching: boolean;
   error: string | null;
 
+  // System config (conventional vs trunked)
+  systemConfig: SystemConfig | null;
+  isConventional: boolean;
+
   // Actions
   fetchActiveSystem: () => Promise<void>;
+  fetchSystemConfig: () => Promise<void>;
+  updateSystemConfig: (config: { type?: string; shortName?: string }) => Promise<boolean>;
   switchToSystem: (systemId: number) => Promise<boolean>;
   stopSystem: () => Promise<void>;
   setActiveSystem: (system: ActiveSystemInfo | null) => void;
@@ -54,6 +63,36 @@ export const useSystemStore = create<SystemState>((set, get) => ({
   activeSystem: null,
   isSwitching: false,
   error: null,
+  systemConfig: null,
+  isConventional: false,
+
+  fetchSystemConfig: async () => {
+    try {
+      const config = await getSystemConfig();
+      set({
+        systemConfig: config,
+        isConventional: config.isConventional,
+      });
+    } catch (err) {
+      console.error('Failed to fetch system config:', err);
+      // Default to trunked if we can't fetch config
+      set({ isConventional: false });
+    }
+  },
+
+  updateSystemConfig: async (config) => {
+    try {
+      const result = await apiUpdateSystemConfig(config);
+      set({
+        systemConfig: result.config,
+        isConventional: result.config.isConventional,
+      });
+      return true;
+    } catch (err) {
+      set({ error: (err as Error).message });
+      return false;
+    }
+  },
 
   fetchActiveSystem: async () => {
     try {

@@ -7,7 +7,8 @@ import { SystemStatus } from './components/status';
 import { SystemBrowser } from './components/radioreference';
 import { ControlChannelFeed } from './components/control';
 import { SpectrumPanel } from './components/spectrum';
-import { useCallsStore, useAudioStore } from './store';
+import { SystemConfigPanel, AvtecConfigPanel } from './components/settings';
+import { useCallsStore, useAudioStore, useSystemStore } from './store';
 import { useFFTStore } from './store/fft';
 import { PANEL_SIZES, STORAGE_KEYS } from './constants';
 import { useEffect, useState } from 'react';
@@ -136,14 +137,37 @@ function SpectrumView() {
   );
 }
 
+function SettingsView() {
+  return (
+    <div className="flex-1 overflow-auto p-6">
+      <div className="max-w-2xl mx-auto space-y-6">
+        <h2 className="text-xl font-semibold text-white mb-6">Settings</h2>
+
+        {/* System Configuration */}
+        <SystemConfigPanel />
+
+        {/* Avtec Integration */}
+        <AvtecConfigPanel />
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const { enableAudio } = useWebSocket();
   const { isLiveEnabled } = useAudioStore();
+  const { fetchSystemConfig } = useSystemStore();
   const location = useLocation();
 
   const isLivePage = location.pathname === '/' || location.pathname === '/live';
   const isBrowsePage = location.pathname.startsWith('/browse');
   const isSpectrumPage = location.pathname === '/spectrum';
+  const isSettingsPage = location.pathname === '/settings';
+
+  // Fetch system config on mount
+  useEffect(() => {
+    fetchSystemConfig();
+  }, [fetchSystemConfig]);
 
   // Sync audio streaming with server
   useEffect(() => {
@@ -188,6 +212,16 @@ function App() {
             >
               Browse Systems
             </Link>
+            <Link
+              to="/settings"
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                isSettingsPage
+                  ? 'bg-blue-600 text-white'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              Settings
+            </Link>
           </div>
         </div>
         <Header />
@@ -201,6 +235,7 @@ function App() {
         <Route path="/browse/state/:stateId" element={<SystemBrowser />} />
         <Route path="/browse/state/:stateId/county/:countyId" element={<SystemBrowser />} />
         <Route path="/browse/system/:systemId" element={<SystemBrowser />} />
+        <Route path="/settings" element={<SettingsView />} />
       </Routes>
 
       {/* Floating audio player (shows when live is enabled) */}

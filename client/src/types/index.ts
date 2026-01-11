@@ -7,6 +7,25 @@ export interface Talkgroup {
   mode: string;
 }
 
+/** Channel for conventional systems (frequency-based) */
+export interface Channel {
+  id: number;
+  frequency: number;
+  alpha_tag: string;
+  description: string | null;
+  group_name: string | null;
+  group_tag: string | null;
+  mode: string;
+  system_type: string;
+}
+
+/** System configuration from server */
+export interface SystemConfig {
+  type: string;
+  shortName: string;
+  isConventional: boolean;
+}
+
 export interface Call {
   id: string;
   talkgroup_id: number;
@@ -18,6 +37,8 @@ export interface Call {
   encrypted: boolean;
   audio_file: string | null;
   audio_type: string | null;
+  system_type?: 'trunked' | 'conventional';
+  channel_id?: number | null;
   // Joined fields
   alpha_tag?: string;
   talkgroup_description?: string;
