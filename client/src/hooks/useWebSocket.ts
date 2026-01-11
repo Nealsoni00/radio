@@ -156,16 +156,24 @@ class WebSocketManager {
           });
 
           // Find the matching call - try exact ID first, then fall back to talkgroup
+          // Note: callStart and callEnd may have different IDs due to timing differences
+          // (callStart uses local timestamp, callEnd uses trunk-recorder's timestamp)
           const callsState = useCallsStore.getState();
           const existingByExactId = callsState.calls.find((c) => c.id === call.id);
-          const existingByTalkgroup = callsState.activeCalls.find(
+          // Search in activeCalls by talkgroup
+          const existingActiveByTalkgroup = callsState.activeCalls.find(
             (c) => c.talkgroup_id === call.talkgroup_id
           );
-          const existingCall = existingByExactId || existingByTalkgroup;
+          // Also search in calls array by talkgroup - find the most recent one without audio
+          const existingInCallsByTalkgroup = callsState.calls.find(
+            (c) => c.talkgroup_id === call.talkgroup_id && !c.audio_file
+          );
+          const existingCall = existingByExactId || existingActiveByTalkgroup || existingInCallsByTalkgroup;
 
           console.log('[WS] callEnd matching:', {
             exactIdMatch: existingByExactId?.id,
-            talkgroupMatch: existingByTalkgroup?.id,
+            activeByTalkgroup: existingActiveByTalkgroup?.id,
+            callsByTalkgroup: existingInCallsByTalkgroup?.id,
             usingId: existingCall?.id,
           });
 
@@ -191,14 +199,19 @@ class WebSocketManager {
           const call = transformCall(message.call);
           const callsState = useCallsStore.getState();
 
-          // Check if this call already exists as active - if so, update it
+          // Find existing call - check exact ID, active calls, and calls without audio
+          const existingByExactId = callsState.calls.find((c) => c.id === call.id);
           const existingActive = callsState.activeCalls.find(
-            (c) => c.id === call.id || c.talkgroup_id === call.talkgroup_id
+            (c) => c.talkgroup_id === call.talkgroup_id
           );
+          const existingInCallsByTalkgroup = callsState.calls.find(
+            (c) => c.talkgroup_id === call.talkgroup_id && !c.audio_file
+          );
+          const existingCall = existingByExactId || existingActive || existingInCallsByTalkgroup;
 
-          if (existingActive) {
-            // Update existing active call to mark it complete
-            updateCall(existingActive.id, { ...call, isActive: false });
+          if (existingCall) {
+            // Update existing call to mark it complete with recording
+            updateCall(existingCall.id, { ...call, id: existingCall.id, isActive: false });
           } else {
             // Add as a completed call (not active since it has audio file)
             addCall({ ...call, isActive: false });
@@ -355,6 +368,11 @@ export function useWebSocket() {
 }
 
 function transformCall(call: Partial<Call>): Call {
+  // Handle audioUrl from newRecording messages - convert to audio_file format
+  // Server sends audioUrl like "/api/audio/{id}" for newRecording
+  // and audioFile like "/path/to/file.wav" for callEnd
+  const audioFile = call.audio_file ?? (call as any).audioFile ?? (call as any).audioUrl ?? null;
+
   return {
     id: call.id || '',
     talkgroup_id: call.talkgroup_id || (call as any).talkgroupId || 0,
@@ -364,7 +382,7 @@ function transformCall(call: Partial<Call>): Call {
     duration: call.duration ?? null,
     emergency: call.emergency || false,
     encrypted: call.encrypted || false,
-    audio_file: call.audio_file ?? (call as any).audioFile ?? null,
+    audio_file: audioFile,
     audio_type: call.audio_type ?? null,
     alpha_tag: call.alpha_tag ?? (call as any).alphaTag,
     group_name: call.group_name ?? (call as any).groupName,

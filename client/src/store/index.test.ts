@@ -105,23 +105,28 @@ describe('useTalkgroupsStore', () => {
     useTalkgroupsStore.setState({
       talkgroups: [],
       selectedTalkgroups: new Set(),
+      filterMode: 'none', // Start in 'none' mode for predictable toggle behavior
       groupFilter: null,
       searchQuery: '',
       isLoading: false,
+      activeSystemId: null,
     });
   });
 
   it('should toggle talkgroup selection', () => {
     const { toggleTalkgroup } = useTalkgroupsStore.getState();
 
+    // Starting from 'none' mode, toggling adds the talkgroup
     toggleTalkgroup(3219);
     expect(useTalkgroupsStore.getState().selectedTalkgroups.has(3219)).toBe(true);
+    expect(useTalkgroupsStore.getState().filterMode).toBe('custom');
 
+    // Toggling again removes it
     toggleTalkgroup(3219);
     expect(useTalkgroupsStore.getState().selectedTalkgroups.has(3219)).toBe(false);
   });
 
-  it('should select all (empty set means all)', () => {
+  it('should select all (filterMode all, empty set)', () => {
     const { toggleTalkgroup, selectAll } = useTalkgroupsStore.getState();
 
     toggleTalkgroup(3219);
@@ -129,6 +134,7 @@ describe('useTalkgroupsStore', () => {
 
     selectAll();
     expect(useTalkgroupsStore.getState().selectedTalkgroups.size).toBe(0);
+    expect(useTalkgroupsStore.getState().filterMode).toBe('all');
   });
 
   it('should set group filter', () => {

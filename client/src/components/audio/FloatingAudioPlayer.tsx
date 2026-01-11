@@ -26,6 +26,8 @@ interface StreamState {
   frequency?: number;
   isActive: boolean;
   activeSince: number; // When this stream first became active (for stable ordering)
+  src?: number; // Radio unit ID that is transmitting
+  streamStartTime?: number; // When the current transmission started (for duration display)
 }
 
 const MAX_VISIBLE_STREAMS = 6;
@@ -226,6 +228,16 @@ function getTalkgroupSecondaryInfo(tg: { id: number; alpha_tag: string; group_ta
   return parts.join(' • ');
 }
 
+// Format duration in real-time (e.g., "0:05", "1:23")
+function formatDuration(startTime: number | undefined): string {
+  if (!startTime) return '';
+  const seconds = Math.floor((Date.now() - startTime) / 1000);
+  if (seconds < 0) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
 // Individual talkgroup stream visualizer
 function TalkgroupStreamCard({
   talkgroupId,
@@ -235,6 +247,8 @@ function TalkgroupStreamCard({
   volume,
   isActive,
   lastUpdate,
+  src,
+  streamStartTime,
   onVolumeChange,
 }: {
   talkgroupId: number;
@@ -244,6 +258,8 @@ function TalkgroupStreamCard({
   volume: number;
   isActive: boolean;
   lastUpdate: number;
+  src?: number;
+  streamStartTime?: number;
   onVolumeChange: (volume: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -357,6 +373,30 @@ function TalkgroupStreamCard({
         className="w-full rounded"
         style={{ height: 50 }}
       />
+
+      {/* Metadata row: Radio unit and duration */}
+      {isActive && (src || streamStartTime) && (
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          {src ? (
+            <div className="flex items-center gap-1 text-slate-400">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z" />
+              </svg>
+              <span className="font-mono text-cyan-400">{src}</span>
+            </div>
+          ) : (
+            <div />
+          )}
+          {streamStartTime && (
+            <div className="flex items-center gap-1 text-slate-400">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="font-mono text-green-400">{formatDuration(streamStartTime)}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center gap-2 mt-1.5">
         <svg className={`w-3 h-3 flex-shrink-0 ${isActive ? 'text-slate-400' : 'text-slate-600'}`} fill="currentColor" viewBox="0 0 24 24">
@@ -538,23 +578,33 @@ export function FloatingAudioPlayer() {
     });
   }, [talkgroups, searchQuery, selectedTalkgroups, talkgroupData]);
 
-  // Update display streams
+  // Update display streams with stable ordering
+  // Active streams stay in position (sorted by when they became active)
+  // Inactive streams go to the end (sorted by most recent activity)
   const updateDisplayStreams = useCallback(() => {
     const streams = streamsRef.current;
-    let sorted: [number, StreamState][];
+    let entries: [number, StreamState][];
 
     if (listenMode === 'follow-recent') {
-      // Show top 6 most recent
-      sorted = Array.from(streams.entries())
-        .sort((a, b) => b[1].lastUpdate - a[1].lastUpdate)
-        .slice(0, MAX_VISIBLE_STREAMS);
+      entries = Array.from(streams.entries());
     } else {
       // Show selected talkgroups that have streams
-      sorted = Array.from(streams.entries())
-        .filter(([tgId]) => selectedTalkgroups.has(tgId))
-        .sort((a, b) => b[1].lastUpdate - a[1].lastUpdate)
-        .slice(0, MAX_VISIBLE_STREAMS);
+      entries = Array.from(streams.entries())
+        .filter(([tgId]) => selectedTalkgroups.has(tgId));
     }
+
+    // Separate active and inactive streams
+    const active = entries.filter(([, s]) => s.isActive);
+    const inactive = entries.filter(([, s]) => !s.isActive);
+
+    // Sort active streams by when they became active (stable order)
+    active.sort((a, b) => a[1].activeSince - b[1].activeSince);
+
+    // Sort inactive streams by most recent activity
+    inactive.sort((a, b) => b[1].lastUpdate - a[1].lastUpdate);
+
+    // Combine: active first (in stable order), then inactive (by recency)
+    const sorted = [...active, ...inactive].slice(0, MAX_VISIBLE_STREAMS);
 
     setDisplayStreams(sorted);
   }, [listenMode, selectedTalkgroups]);
@@ -607,6 +657,8 @@ export function FloatingAudioPlayer() {
         displayName = `TG ${talkgroupId.toString(16).toUpperCase()}`;
       }
 
+      const now = Date.now();
+
       if (!stream) {
         const player = new LivePCMPlayer(audioSampleRate);
         player.init();
@@ -615,31 +667,46 @@ export function FloatingAudioPlayer() {
 
         stream = {
           player,
-          lastUpdate: Date.now(),
+          lastUpdate: now,
           alphaTag: displayName,
           frequency: metadata?.freq || metadata?.frequency,
           isActive: true,
+          activeSince: now, // Track when this stream first became active
+          src: metadata?.src, // Radio unit ID
+          streamStartTime: now, // When this transmission started
         };
         streams.set(talkgroupId, stream);
 
-        // Clean up old streams based on mode
-        if (listenMode === 'follow-recent' && streams.size > MAX_VISIBLE_STREAMS) {
-          const sorted = Array.from(streams.entries())
-            .sort((a, b) => b[1].lastUpdate - a[1].lastUpdate);
+        // Clean up old inactive streams based on mode (keep active ones)
+        if (listenMode === 'follow-recent' && streams.size > MAX_VISIBLE_STREAMS * 2) {
+          // Only remove inactive streams that exceed our limit
+          const inactive = Array.from(streams.entries())
+            .filter(([, s]) => !s.isActive)
+            .sort((a, b) => a[1].lastUpdate - b[1].lastUpdate); // Oldest first
 
-          for (let i = MAX_VISIBLE_STREAMS; i < sorted.length; i++) {
-            const [oldTgId, oldStream] = sorted[i];
+          const toRemove = inactive.slice(0, streams.size - MAX_VISIBLE_STREAMS * 2);
+          for (const [oldTgId, oldStream] of toRemove) {
             oldStream.player.destroy();
             streams.delete(oldTgId);
           }
         }
       }
 
+      // If stream was inactive and is now becoming active again, update activeSince and streamStartTime
+      if (!stream.isActive) {
+        stream.activeSince = now;
+        stream.streamStartTime = now; // New transmission starting
+      }
+
       stream.player.feed(pcmData);
-      stream.lastUpdate = Date.now();
+      stream.lastUpdate = now;
       stream.isActive = true;
       stream.alphaTag = displayName || stream.alphaTag;
       stream.frequency = metadata?.freq || metadata?.frequency || stream.frequency;
+      // Update src if it changes during transmission (different unit keying up)
+      if (metadata?.src) {
+        stream.src = metadata.src;
+      }
 
       updateDisplayStreams();
 
@@ -663,6 +730,11 @@ export function FloatingAudioPlayer() {
       };
     }
   }, [isLiveEnabled, handleAudioChunk]);
+
+  // Update display when mode or selection changes
+  useEffect(() => {
+    updateDisplayStreams();
+  }, [listenMode, selectedTalkgroups, updateDisplayStreams]);
 
   // Mark idle streams and update display
   useEffect(() => {
@@ -898,6 +970,8 @@ export function FloatingAudioPlayer() {
                       volume={tgVolumes.get(talkgroupId) ?? volume}
                       isActive={stream.isActive}
                       lastUpdate={stream.lastUpdate}
+                      src={stream.src}
+                      streamStartTime={stream.streamStartTime}
                       onVolumeChange={(v) => handleTgVolumeChange(talkgroupId, v)}
                     />
                   );
