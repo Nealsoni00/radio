@@ -560,7 +560,10 @@ export function FloatingAudioPlayer() {
     }
 
     // Sort by: selected first, then by most recent activity, then alphabetically
-    return [...filtered].sort((a, b) => {
+    return [...filtered].filter(Boolean).sort((a, b) => {
+      // Guard against undefined entries
+      if (!a || !b) return 0;
+
       const aSelected = selectedTalkgroups.has(a.id);
       const bSelected = selectedTalkgroups.has(b.id);
 
@@ -574,7 +577,9 @@ export function FloatingAudioPlayer() {
       if (aTime !== bTime) return bTime - aTime;
 
       // Finally alphabetically
-      return getTalkgroupDisplayName(a).localeCompare(getTalkgroupDisplayName(b));
+      const aName = getTalkgroupDisplayName(a) || '';
+      const bName = getTalkgroupDisplayName(b) || '';
+      return aName.localeCompare(bName);
     });
   }, [talkgroups, searchQuery, selectedTalkgroups, talkgroupData]);
 
